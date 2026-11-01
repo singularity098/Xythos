@@ -54,7 +54,7 @@ std::optional<ChainState> ChainState::fromJson(std::string_view text, std::strin
     try
     {
         const json root = json::parse(text);
-        const int version = root.value("version", 0);
+        const int version = jsonInt(root, "version", 0);
         if (version < 1 || version > kVersion) // version 1 had no split
         {
             if (error)
@@ -67,12 +67,12 @@ std::optional<ChainState> ChainState::fromJson(std::string_view text, std::strin
         {
             BlockState block;
             block.typeId = item.at("type").get<std::string>();
-            block.slot = item.at("slot").get<int>();
+            block.slot = jsonInt<int>(item.at("slot"));
             block.config = item.value("config", json::object());
             block.bypass = item.value("bypass", false);
-            block.branch = item.value("branch", 0);
+            block.branch = jsonInt(item, "branch", 0);
             block.image = item.value("image", std::string());
-            block.latched = item.value("latched", 0u);
+            block.latched = jsonInt(item, "latched", 0u);
             if (const auto params = item.find("params"); params != item.end())
             {
                 for (size_t i = 0; i < params->size() && i < block.params.size(); ++i)
@@ -84,14 +84,14 @@ std::optional<ChainState> ChainState::fromJson(std::string_view text, std::strin
         {
             for (const json& item : *midi)
             {
-                state.midi.push_back({ item.at("channel").get<int>(), item.at("cc").get<int>(),
-                                       item.at("param").get<uint32_t>() });
+                state.midi.push_back({ jsonInt<int>(item.at("channel")), jsonInt<int>(item.at("cc")),
+                                       jsonInt<uint32_t>(item.at("param")) });
             }
         }
         state.preset = root.value("preset", std::string());
         state.restoreLatches = root.value("restoreLatches", false);
         if (const auto split = root.find("split"); split != root.end())
-            state.split = SplitState { split->at("begin").get<int>(), split->at("end").get<int>() };
+            state.split = SplitState { jsonInt<int>(split->at("begin")), jsonInt<int>(split->at("end")) };
         return state;
     }
     catch (const json::exception& e)

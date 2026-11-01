@@ -233,3 +233,14 @@ TEST_CASE("numbers past the float range load clamped, so the chain still saves a
     REQUIRE(again);
     CHECK(*again == *chain);
 }
+
+TEST_CASE("whole numbers written as huge decimals don't load, rather than overflowing")
+{
+    CHECK_FALSE(ChainState::fromJson(R"({"version": 3e31, "blocks": []})"));
+    CHECK_FALSE(ChainState::fromJson(R"({"version": 1, "blocks": [{"type": "delay", "slot": -1e300}]})"));
+    CHECK_FALSE(ChainState::fromJson(R"({"version": 1, "blocks": [], "midi": [{"channel": 0, "cc": 7, "param": -5.0}]})"));
+    // a decimal that fits still reads, as before
+    const std::optional<ChainState> chain = ChainState::fromJson(R"({"version": 1.0, "blocks": [{"type": "delay", "slot": 3.0}]})");
+    REQUIRE(chain);
+    CHECK(chain->blocks[0].slot == 3);
+}

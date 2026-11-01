@@ -144,7 +144,7 @@ std::optional<Preset> Preset::fromJson(std::string_view text, std::string* error
     try
     {
         const json root = json::parse(text);
-        const int version = root.value("version", 0);
+        const int version = jsonInt(root, "version", 0);
         if (version < 1 || version > kVersion)
         {
             fail(error, "unsupported preset version " + std::to_string(version));

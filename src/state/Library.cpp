@@ -6,6 +6,8 @@
 #include "state/Paths.hpp"
 
 #include <miniz.h>
+#include "state/ChainState.hpp" // jsonInt()
+
 #include <nlohmann/json.hpp>
 
 #define XXH_INLINE_ALL
@@ -135,8 +137,8 @@ std::string waveNetArchitecture(const json& config)
     }
     if (layers->size() != 2)
         return "WaveNet";
-    const int first = (*layers)[0].is_object() ? (*layers)[0].value("channels", 0) : 0;
-    const int second = (*layers)[1].is_object() ? (*layers)[1].value("channels", 0) : 0;
+    const int first = (*layers)[0].is_object() ? jsonInt((*layers)[0], "channels", 0) : 0;
+    const int second = (*layers)[1].is_object() ? jsonInt((*layers)[1], "channels", 0) : 0;
     static constexpr struct {
         int first, second;
         const char* name;
@@ -342,7 +344,7 @@ void LibraryIndex::load(const fs::path& path)
     try
     {
         const json root = json::parse(*text);
-        if (root.value("version", 0) != kIndexVersion)
+        if (jsonInt(root, "version", 0) != kIndexVersion)
             return; // made by an older version, without what's read from files since: rescan them all
         for (const json& item : root.at("entries"))
         {
@@ -352,8 +354,8 @@ void LibraryIndex::load(const fs::path& path)
             entry.info = item.value("info", std::string());
             entry.gearType = item.value("gearType", std::string());
             entry.arch = item.value("arch", std::string());
-            entry.size = item.at("size").get<uint64_t>();
-            entry.mtime = item.at("mtime").get<int64_t>();
+            entry.size = jsonInt<uint64_t>(item.at("size"));
+            entry.mtime = jsonInt<int64_t>(item.at("mtime"));
             fEntries[entry.path] = std::move(entry);
         }
     }

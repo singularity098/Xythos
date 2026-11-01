@@ -53,7 +53,11 @@ Settings Settings::fromJson(std::string_view text)
                 return;
             try
             {
-                value = it->get<std::remove_reference_t<decltype(value)>>();
+                using T = std::remove_reference_t<decltype(value)>;
+                if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+                    value = jsonInt<T>(*it);
+                else
+                    value = it->get<T>();
             }
             catch (const json::exception&)
             {

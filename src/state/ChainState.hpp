@@ -11,12 +11,39 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <limits>
+#include <type_traits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace xythos {
+
+// A JSON integer as T. A float that fits is truncated as get<T>() does; one that doesn't (3e31 as an int) throws
+// json::type_error instead of being undefined behaviour, as get<T>() would be.
+template <typename T>
+T jsonInt(const nlohmann::json& value)
+{
+    static_assert(std::is_integral_v<T>);
+    if (value.is_number_float())
+    {
+        const double v = value.get<double>();
+        const double limit = std::ldexp(1.0, std::numeric_limits<T>::digits); // T's max + 1, exactly
+        const bool fits = std::is_signed_v<T> ? v >= -limit && v < limit : v > -1.0 && v < limit;
+        if (!fits)
+            throw nlohmann::json::type_error::create(302, "number out of range", &value);
+    }
+    return value.get<T>();
+}
+
+// The same for an object's member, `fallback` if it has none (json::value() for integers)
+template <typename T>
+T jsonInt(const nlohmann::json& object, const char* key, T fallback)
+{
+    const auto it = object.find(key);
+    return it == object.end() ? fallback : jsonInt<T>(*it);
+}
 
 // A JSON number as a float. Any number reads, clamped to the float range (get<float>() turns 1e39 into infinity,
 // which saves as null and then doesn't load); a non-number throws json::type_error as get<float>() does.
