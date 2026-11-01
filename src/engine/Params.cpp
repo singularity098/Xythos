@@ -107,6 +107,36 @@ const GlobalParamSpec kNewestParams[] = {
     // picked the Chevrons strobe over Hive (owner, 2026-10-31); unused since Hive was removed (owner, 2026-11-01), kept
     // because host parameter indices never go away
     { "Tuner Chevrons",      "tuner_chevrons", "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle | kParamFlagHidden },
+    // the global looper (owner, 2026-11-01), in LooperParam order: the footswitches and the sound are automatable, the
+    // set-up is hidden
+    { "Looper Rec/Dub",      "looper_rec",      "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Play/Stop",    "looper_play",     "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Clear",        "looper_clear",    "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Level",        "looper_level",    "%",   0.0f,   100.0f, 100.0f, kParamFlagNone },
+    { "Looper Feedback",     "looper_feedback", "%",   0.0f,   100.0f, 100.0f, kParamFlagNone },
+    { "Looper Reverse",      "looper_reverse",  "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Half Speed",   "looper_half",     "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Mode",         "looper_mode",     "",    0.0f,   1.0f,   0.0f,   kParamFlagInteger | kParamFlagHidden },
+    { "Looper BPM",          "looper_bpm",      "BPM", 40.0f,  240.0f, 120.0f, kParamFlagNone },
+    { "Looper Beats",        "looper_beats",    "",    1.0f,   12.0f,  4.0f,   kParamFlagInteger | kParamFlagHidden },
+    { "Looper Count-In",     "looper_count_in", "",    0.0f,   16.0f,  8.0f,   kParamFlagInteger | kParamFlagHidden },
+    { "Looper Measures",     "looper_measures", "",    1.0f,   16.0f,  4.0f,   kParamFlagInteger | kParamFlagHidden },
+    { "Looper Loops",        "looper_loops",    "",    1.0f,   8.0f,   1.0f,   kParamFlagInteger | kParamFlagHidden },
+    { "Looper Click",        "looper_click",    "%",   0.0f,   200.0f, 150.0f, kParamFlagHidden },
+    { "Looper Tap",          "looper_tap",      "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle },
+    { "Looper Latency",      "looper_latency",  "ms",  0.0f,   200.0f, 10.0f,  kParamFlagHidden },
+    { "Looper State",        "looper_state",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Position",     "looper_pos",      "",    0.0f,   1.0f,   0.0f,   kParamFlagOutput | kParamFlagHidden },
+    { "Looper Count",        "looper_count",    "",    0.0f,   16.0f,  0.0f,   kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Length",       "looper_length",   "s",   0.0f,   120.0f, 0.0f,   kParamFlagOutput | kParamFlagHidden },
+    { "Looper Wave 1",       "looper_wave1",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 2",       "looper_wave2",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 3",       "looper_wave3",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 4",       "looper_wave4",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 5",       "looper_wave5",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 6",       "looper_wave6",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 7",       "looper_wave7",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Looper Wave 8",       "looper_wave8",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
 };
 static_assert(sizeof(kNewestParams) / sizeof(kNewestParams[0]) == kParamCount - kParamSlotLatchEnd);
 

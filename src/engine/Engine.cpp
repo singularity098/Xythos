@@ -92,6 +92,10 @@ void Engine::prepare(double sampleRate, uint32_t maxFrames)
         block->reset();
     }
 
+    fLooper.setHasCountIn(true);
+    fLooper.prepare(fSampleRate);
+    fLooperApplyAll = true;
+
     // block latencies may depend on the sample rate
     updateLatency(*fActive);
     fLatency.store(fActive->latency, std::memory_order_relaxed);
@@ -361,6 +365,39 @@ Metronome::Settings Engine::metronomeSettings() const
     return settings;
 }
 
+void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t frames)
+{
+    // the controls it hasn't taken yet (only changes: Tap sets the BPM inside it, which the host's value mustn't undo)
+    for (int p = 0; p < kLooperParamCount; ++p)
+    {
+        const float value = param(looperParam(p));
+        if (fLooperApplyAll || value != fLooperApplied[static_cast<size_t>(p)])
+        {
+            fLooperApplied[static_cast<size_t>(p)] = value;
+            fLooper.setParam(p, value);
+        }
+    }
+    fLooperApplyAll = false;
+
+    // a loop recorded in stereo plays in stereo whatever the chain is now
+    if (numChannels == 1 && (fLooper.hasLoop() || fLooper.report().state == LooperState::Recording))
+    {
+        std::memcpy(work[1], work[0], sizeof(float) * frames);
+        numChannels = 2;
+    }
+    fLooper.process(work, numChannels, frames, fBlockClick[0].data());
+
+    const LooperReport report = fLooper.report();
+    fParams[kParamLooperState].store(report.encodeState(), std::memory_order_relaxed);
+    fParams[kParamLooperPosition].store(report.position, std::memory_order_relaxed);
+    fParams[kParamLooperCount].store(static_cast<float>(report.count), std::memory_order_relaxed);
+    fParams[kParamLooperLength].store(report.seconds, std::memory_order_relaxed);
+    float cells[kParamLooperCellEnd - kParamLooperCellBase];
+    fLooper.streamCells(cells, static_cast<int>(std::size(cells)));
+    for (uint32_t k = 0; k < std::size(cells); ++k)
+        fParams[kParamLooperCellBase + k].store(cells[k], std::memory_order_relaxed);
+}
+
 void Engine::processChunk(const float* const* inputs, float* const* outputs, uint32_t frames,
                           const Transport* transport, uint32_t offset)
 {
@@ -428,7 +465,7 @@ void Engine::processChunk(const float* const* inputs, float* const* outputs, uin
         }
     }
 
-    const uint32_t outChannels = processChain(numChannels, frames);
+    uint32_t outChannels = processChain(numChannels, frames);
 
     if (fFade != Fade::Idle)
     {
@@ -478,6 +515,9 @@ void Engine::processChunk(const float* const* inputs, float* const* outputs, uin
         for (uint32_t ch = 0; ch < outChannels; ++ch)
             fWork[ch][i] *= g;
     }
+
+    // The looper, on what's heard; it turns the output stereo while it holds a loop
+    processLooper(work, outChannels, frames);
 
     // Metronome, before the limiter so clicks can't clip the output
     std::fill(fClick.begin(), fClick.begin() + frames, 0.0f);

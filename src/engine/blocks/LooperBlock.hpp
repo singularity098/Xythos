@@ -4,12 +4,13 @@
 #pragma once
 
 #include "engine/Block.hpp"
-
-#include <cstdint>
+#include "engine/looper/Looper.hpp"
 
 namespace xythos {
 
-// Looper: one loop of up to 60 s (at 48 kHz; the buffer is a fixed number of samples). Footswitch-style controls
+// The old Looper block (retired 2026-11-01: the looper is global now, Engine and looper/Looper.hpp; the type stays
+// registered so chains saved with one still build, and the UI moves its settings to the global looper). The looper:
+// one loop of up to 60 s (at 48 kHz; the buffer is a fixed number of samples). Footswitch-style controls
 // (momentary parameters: map footswitches to them with MIDI learn):
 // - Rec/Dub: empty -> record; recording -> play (closes the loop); playing <-> overdub; stopped -> overdub
 // - Play/Stop: recording -> play; playing or overdubbing -> stop; stopped -> play from the start
@@ -44,53 +45,5 @@ extern const BlockDescriptor kLooperBlockDescriptor;
 
 constexpr const char* kLooperCountInKey = "countIn";
 constexpr const char* kLooperLatencyKey = "latency"; // marks a block made since Latency existed (UI migration only)
-
-enum LooperParam {
-    kLooperParamRecDub,   // momentary
-    kLooperParamPlayStop, // momentary
-    kLooperParamClear,    // momentary
-    kLooperParamLevel,    // %
-    kLooperParamFeedback, // %
-    kLooperParamReverse,  // toggle
-    kLooperParamHalf,     // toggle
-    kLooperParamMode,     // choice: Count In, Free
-    kLooperParamBpm,      // the count-in metronome's tempo
-    kLooperParamBeats,    // choice: beats to the bar, 1..12
-    kLooperParamCountIn,  // choice: clicks before recording, 0..16
-    kLooperParamMeasures, // choice: bars to record, 1..16
-    kLooperParamLoops,    // choice: passes recorded (the first, then overdubs), 1..8
-    kLooperParamClick,    // %: the clicks' level (100% = the metronome's default volume; up to 200%)
-    kLooperParamTap,      // momentary: tap tempo for BPM
-    kLooperParamLatency,  // ms: the round trip compensated for (config "latency"; added 2026-10-31)
-    kLooperParamCount
-};
-
-enum class LooperState { Empty, Recording, Playing, Overdubbing, Stopped, CountIn };
-
-constexpr double kLooperMaxSeconds = 60.0;
-constexpr uint32_t kLooperMaxSamples = 60 * 48000;
-
-// The status the looper reports through meter(): exact in a float (under 2^24)
-struct LooperStatus {
-    LooperState state = LooperState::Empty;
-    int lengthTenths = 0; // loop length in tenths of a second (0..600)
-    int progress = 0;     // position in the loop, percent (0..99); Count In mode's recording: how much is done,
-                          // percent; counting in: the click being counted (1..16)
-
-    float encode() const
-    {
-        return static_cast<float>(static_cast<int>(state) * 1000000 + lengthTenths * 100 + progress);
-    }
-
-    static LooperStatus decode(float value)
-    {
-        const int v = static_cast<int>(value + 0.5f);
-        LooperStatus s;
-        s.state = static_cast<LooperState>(v / 1000000 > 5 ? 0 : v / 1000000);
-        s.lengthTenths = (v / 100) % 10000;
-        s.progress = v % 100;
-        return s;
-    }
-};
 
 } // namespace xythos

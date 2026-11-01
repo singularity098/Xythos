@@ -2398,6 +2398,55 @@ constexpr GlobalHelp kGlobalHelp[] = {
     { "tuner_runes",
       "The runes view: a row of 21 glyphs, 5 cents each. Glyphs light up from the centre toward the side you're "
       "off, left when you're flat and right when you're sharp; tune until only the centre one is lit, in green." },
+    // the global looper (owner, 2026-11-01)
+    { "looper_rec",
+      "Press to record. Press again to close the loop and play it back. While it plays, press to overdub another "
+      "pass, and again to go back to just playing. In Count In mode the first press starts the count-in (press again "
+      "to call it off), and the loop closes by itself after the bars you set. Map a footswitch to it with MIDI learn: "
+      "right-click the button." },
+    { "looper_play",
+      "Stops the loop, or starts it again from the beginning. While recording, it closes the loop and plays it." },
+    { "looper_clear",
+      "Erases the loop and its passes, so you can record a new one. There's no undo for this, so be sure you're "
+      "done with the loop." },
+    { "looper_level",
+      "The volume of the loop playback. Lower it so the loop sits behind what you play live. Your live playing "
+      "always passes at full level." },
+    { "looper_feedback",
+      "How much of the loop each overdub pass keeps. 100% keeps everything; lower values fade older passes out as "
+      "you add new ones." },
+    { "looper_reverse", "Plays the loop backwards, for a swelling, otherworldly sound. Turn it off to play it forwards." },
+    { "looper_half",
+      "Plays the loop at half speed, so it sounds an octave lower and twice as long: a slowed-down, dreamy version of "
+      "what you played." },
+    { "looper_mode",
+      "Count In: pressing Rec/Dub counts you in with a click, records exactly the bars you set, overdubs the passes "
+      "you set, then plays the loop back without the click. Free: recording starts the moment you press Rec/Dub and "
+      "stops when you press it again, with no click." },
+    { "looper_bpm",
+      "The count-in click's tempo, in beats per minute. It sets how long the loop is: Bars bars of Beats beats at "
+      "this tempo. Set it before pressing Rec/Dub, or tap it with Tap." },
+    { "looper_beats", "Beats to the bar for the count-in click (4 for 4/4, 3 for a waltz). The first beat of each bar clicks higher." },
+    { "looper_count_in",
+      "How many clicks count you in before recording starts. 8 gives you two bars of 4/4 to get ready; 4 one bar; 0 "
+      "starts recording on the first click." },
+    { "looper_measures",
+      "How many bars Count In mode records. When they're done the loop closes on its own and plays back, so you "
+      "don't need to hit the button on the beat." },
+    { "looper_loops",
+      "How many passes Count In mode records: the first, then overdubs on top of it, each in its own lane on the "
+      "timeline, with the click going on until the last one is done." },
+    { "looper_click",
+      "The volume of the count-in click, up to 200%. 100% is as loud as the metronome's default. The click is only "
+      "heard, never recorded into the loop." },
+    { "looper_tap",
+      "Tap it in time, three or four times, to set the tempo for the next count-in to the tempo you tap. Map a "
+      "footswitch to it with MIDI learn to set the tempo with your foot." },
+    { "looper_latency",
+      "Your audio interface's round trip: how late what you play reaches the plugin after the sound you played to "
+      "left it. The looper makes up for it, so a Count In loop starts on the beat you played and comes round on the "
+      "click, and overdubs land where you heard the loop. If loops or overdubs come in late, raise it; early, lower "
+      "it. Reaper shows the input and output latency (add them) top right in its main window." },
     { "metro", "Starts and stops the metronome. With DAW sync on, it clicks while the DAW plays." },
     { "metro_tempo",
       "The metronome's speed in beats per minute. Drag the slider, use the -/+ buttons, the arrow keys, or tap "

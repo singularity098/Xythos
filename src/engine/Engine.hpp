@@ -13,6 +13,7 @@
 #include "engine/dsp/Meter.hpp"
 #include "engine/dsp/Smoother.hpp"
 #include "engine/dsp/ToneStack.hpp"
+#include "engine/looper/Looper.hpp"
 #include "engine/metronome/Metronome.hpp"
 #include "engine/tuner/Tuner.hpp"
 #include "state/ChainState.hpp"
@@ -26,7 +27,7 @@
 
 namespace xythos {
 
-// The audio engine: input stage, signal chain (with an optional split), tone stack, output stage, metronome,
+// The audio engine: input stage, signal chain (with an optional split), tone stack, output stage, looper, metronome,
 // limiter and meters, and the tuner's input.
 //
 // Threads: process() runs on the audio thread and never allocates, locks or frees. setChain() and prepare()
@@ -173,6 +174,7 @@ private:
     // RT. Replaces NaN and infinite samples with silence; returns whether there were any
     static bool silenceNonFinite(float* const* io, uint32_t numChannels, uint32_t frames);
     float param(uint32_t index) const { return fParams[index].load(std::memory_order_relaxed); }
+    void processLooper(float* const* work, uint32_t& numChannels, uint32_t frames);
 
     const BlockRegistry& fRegistry;
     std::mutex fMutex; // non-RT callers only
@@ -227,6 +229,11 @@ private:
     Limiter fLimiter;
     Tuner fTuner;
     Metronome fMetronome;
+    // The global looper (owner, 2026-11-01): after the output level, so it records what's heard and plays on whatever
+    // the chain becomes; its clicks join the metronome's. fLooperApplied holds the values it last took.
+    Looper fLooper;
+    std::array<float, kLooperParamCount> fLooperApplied {};
+    bool fLooperApplyAll = true;
     Meter fInMeters[2], fOutMeters[2];
 
     std::vector<float> fWork[2], fDry[2], fScratch[2];

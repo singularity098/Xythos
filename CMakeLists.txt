@@ -318,6 +318,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/DspTests.cpp
     tests/EngineTests.cpp
     tests/FileLookTests.cpp
+    tests/LooperTests.cpp
     tests/InkTests.cpp
     tests/IrBlockTests.cpp
     tests/LibraryTests.cpp

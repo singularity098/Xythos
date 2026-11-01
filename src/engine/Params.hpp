@@ -116,7 +116,19 @@ enum LaterParam : uint32_t {
     kParamTunerRunes = kParamSlotLatchEnd, // hidden, UI only: the Runes view (owner, 2026-10-31); over Tuner Strobe
     kParamTunerChevrons,    // hidden, unused: picked Chevrons over Hive, until Hive was removed (owner, 2026-11-01)
 
-    kParamCount
+    // The global looper (owner, 2026-11-01; was a block): its 16 controls in LooperParam order, real values. The
+    // footswitches (Rec/Dub, Play/Stop, Clear, Tap) are 1 while held and act on the press. Then its outputs.
+    kParamLooperBase,
+    kParamLooperEnd = kParamLooperBase + 16,
+    kParamLooperState = kParamLooperEnd, // output, hidden: LooperReport::encodeState()
+    kParamLooperPosition,   // output, hidden: 0..1 round the loop (a timed recording: how much is done)
+    kParamLooperCount,      // output, hidden: counting in, the click being counted (1..); else 0
+    kParamLooperLength,     // output, hidden: the loop's length in seconds
+    kParamLooperCellBase,   // outputs, hidden: waveform cells (encodeLooperCell()), the first the one written last
+    kParamLooperCellEnd = kParamLooperCellBase + 8,
+
+    // (new parameters go here, the first one = kParamLooperCellEnd, and kParamCount after them)
+    kParamCount = kParamLooperCellEnd
 };
 
 constexpr uint32_t slotBypassParam(int slot)
@@ -139,6 +151,11 @@ constexpr uint32_t slotLatchParam(int slot)
     return kParamSlotLatchBase + static_cast<uint32_t>(slot);
 }
 
+constexpr uint32_t looperParam(int param)
+{
+    return kParamLooperBase + static_cast<uint32_t>(param);
+}
+
 constexpr bool isSlotParam(uint32_t index)
 {
     return index >= kSlotParamBase && index < kFirstLaterParam;
@@ -147,10 +164,10 @@ constexpr bool isSlotParam(uint32_t index)
 // The value (as the host sees it) a CC value 0..127 sets a mapped parameter to
 float midiCcToValue(uint32_t index, int ccValue);
 
-// Parameters a MIDI controller can be mapped to: the user-facing inputs (globals and slots)
+// Parameters a MIDI controller can be mapped to: the user-facing inputs (globals, slots and the looper's)
 constexpr bool isMidiMappable(uint32_t index)
 {
-    return index < kParamInPeakL || isSlotParam(index);
+    return index < kParamInPeakL || isSlotParam(index) || (index >= kParamLooperBase && index < kParamLooperEnd);
 }
 
 enum ParamFlags : uint32_t {

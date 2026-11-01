@@ -202,6 +202,7 @@ enum class Hit {
     Step,         // index = host parameter, add `value` (real units), clamped
     Slider,       // index = host parameter; horizontal drag over the rect
     MetroPanel,   // open/close the metronome panel
+    LooperPanel,  // open/close the looper page
     MetroAccent,  // index = beat: cycle accent / normal / soft / mute
     MetroGrouping, // next beat grouping
     MetroResetAccents,
@@ -602,7 +603,9 @@ std::vector<AddItem> addItems(Category category)
         return items;
     for (const BlockDescriptor* type : BlockRegistry::builtin().types())
     {
-        if (type->category == category)
+        // the Looper block is retired (owner, 2026-11-01: the looper is global, in the top bar); the type stays only
+        // so chains saved with one still build
+        if (type->category == category && type != &kLooperBlockDescriptor)
             items.push_back({ type->displayName, type });
     }
     return items;
@@ -711,6 +714,8 @@ protected:
         if (index >= kParamCount)
             return;
         fParams[index] = value;
+        if (index == kParamLooperState || (index >= kParamLooperCellBase && index < kParamLooperCellEnd))
+            looperOutput(index, value);
         // automation and MIDI change values in the host; presets and undo need them too
         if (isSlotParam(index))
             syncChainValue(index, value);
@@ -747,6 +752,7 @@ protected:
             // an empty state is a new instance's (it may still get the default preset); a saved chain is never empty
             fGotChainState = value[0] != '\0';
             fChain = std::move(*chain);
+            retireLoopersFromHost();
             fMigratedSlots = migrateBlocks(fChain);
             fSavedChain = fChain; // the host's state: nothing to mark as modified, nothing to undo
             fUndo.clear();
@@ -830,6 +836,10 @@ protected:
         {
             drawTuner();
         }
+        else if (fLooperPanel)
+        {
+            drawLooper();
+        }
         else
         {
             drawChain();
@@ -885,7 +895,7 @@ protected:
         {
             // a middle click on a block turns it on or off (owner, 2026-10-30; it removed it); middle-drag anywhere
             // else over the chain scrolls it
-            const bool chainShown = !fMetroPanel && fParams[kParamTuner] < 0.5f;
+            const bool chainShown = !fMetroPanel && !fLooperPanel && fParams[kParamTuner] < 0.5f;
             if (!chainShown || fDialog != Dialog::None || y < kChainTop - 12.0f
                 || y > kChainTop + fLayout.height + 20.0f)
                 return false;
@@ -951,6 +961,8 @@ protected:
             return true;
 
         case Hit::Toggle:
+            if (hit->index == static_cast<int>(kParamTuner))
+                fLooperPanel = false;
             if (isSlot(hit->index))
                 beginEdit();
             setNormalized(hit->index, normalized(hit->index) >= 0.5f ? 0.0f : 1.0f, true);
@@ -1510,6 +1522,19 @@ protected:
 
         case Hit::MetroPanel:
             fMetroPanel = !fMetroPanel;
+            fLooperPanel = false;
+            repaint();
+            return true;
+
+        case Hit::LooperPanel:
+            // the looper page takes the chain's place, as the tuner and the metronome do: one of them at a time
+            fLooperPanel = !fLooperPanel;
+            if (fLooperPanel)
+            {
+                fMetroPanel = false;
+                if (fParams[kParamTuner] >= 0.5f)
+                    setValue(kParamTuner, 0.0f);
+            }
             repaint();
             return true;
 
@@ -1844,6 +1869,16 @@ protected:
             repaint(); // the readout itself counts frames, so keep drawing
         if (fMomentaryReleasePending && std::chrono::steady_clock::now() - fMomentaryPressedAt >= kMomentaryMinHold)
             releaseMomentary();
+        if (fRetiredLooper)
+        {
+            // a project's Looper block: its settings go to the global looper and the chain goes without it
+            const LooperSettings settings = *std::exchange(fRetiredLooper, std::nullopt);
+            for (int p = 0; p < kLooperParamCount; ++p)
+                if (p != kLooperParamRecDub && p != kLooperParamPlayStop && p != kLooperParamClear && p != kLooperParamTap)
+                    setValue(looperParam(p), settings[static_cast<size_t>(p)]);
+            sendChain();
+            showToast("The looper has moved to the top bar (∞); this project's Looper block settings went with it.");
+        }
         if (!fMigratedSlots.empty())
         {
             // the host has the old blocks' unused values (0; -12 dB for NAM tone): the defaults first, then the chain
@@ -1905,6 +1940,9 @@ protected:
 
         // the metronome's beat pulse
         if (fParams[kParamMetronome] >= 0.5f || fMetroPanel)
+            repaint();
+        // the looper's page moves with the loop, and the top bar's dot shows its state
+        if (fLooperPanel || looperReport().state != LooperState::Empty)
             repaint();
 
         // the tuner animates (needle easing, strobe)
@@ -2138,29 +2176,22 @@ private:
         repaint();
     }
 
-    // A looper's Tap pressed (from the panel or a MIDI footswitch: about to be written to the host as `value`): the
-    // UI times the taps as the block does, and sets its BPM control to the tempo tapped, so the knob shows it
+    // The looper's Tap pressed (from its page or a MIDI footswitch: about to be written to the host as `value`): the
+    // UI times the taps as the looper does, and sets the BPM control to the tempo tapped, so it shows it
     void watchLooperTap(uint32_t index, float value)
     {
-        if (!isSlot(index) || value < 0.5f || fParams[index] >= 0.5f)
+        if (index != looperParam(kLooperParamTap) || value < 0.5f || fParams[index] >= 0.5f)
             return;
-        const uint32_t offset = index - kSlotParamBase;
-        const int slot = static_cast<int>(offset / kSlotParamCount);
-        const int param = static_cast<int>(offset % kSlotParamCount) - 1;
-        const BlockState* block = blockInSlot(slot);
-        if (param != kLooperParamTap || block == nullptr || block->typeId != kLooperBlockDescriptor.typeId)
-            return;
-        TapTempo& taps = fLooperTaps[static_cast<size_t>(slot)];
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        if (const double bpm = taps.tap(seconds); bpm > 0.0)
+        if (const double bpm = fLooperTap.tap(seconds); bpm > 0.0)
         {
-            const ParamSpec& spec = kLooperBlockDescriptor.params[kLooperParamBpm];
-            const uint32_t bpmIndex = slotParam(slot, kLooperParamBpm);
-            const float n = spec.toNormalized(std::clamp(static_cast<float>(std::round(bpm)), spec.min, spec.max));
+            const uint32_t bpmIndex = looperParam(kLooperParamBpm);
+            const GlobalParamSpec& spec = globalParamSpec(bpmIndex);
+            const float v = std::clamp(static_cast<float>(std::round(bpm)), spec.min, spec.max);
             editParameter(bpmIndex, true);
-            setHostParameter(bpmIndex, n);
+            setHostParameter(bpmIndex, v);
             editParameter(bpmIndex, false);
-            syncChainValue(bpmIndex, n);
+            fParams[bpmIndex] = v;
         }
     }
 
@@ -2215,6 +2246,21 @@ private:
     std::string valueText(uint32_t index) const
     {
         char buf[32];
+        if (index >= kParamLooperBase && index < kParamLooperEnd)
+        {
+            // the looper's: whole numbers, percent and ms without the global knobs' sign
+            const int param = static_cast<int>(index - kParamLooperBase);
+            const float v = fParams[index];
+            if (param == kLooperParamLevel || param == kLooperParamFeedback || param == kLooperParamClick)
+                std::snprintf(buf, sizeof(buf), "%.0f%%", v);
+            else if (param == kLooperParamLatency)
+                std::snprintf(buf, sizeof(buf), "%.0f ms", v);
+            else if (param == kLooperParamReverse || param == kLooperParamHalf)
+                return v >= 0.5f ? "On" : "Off";
+            else
+                std::snprintf(buf, sizeof(buf), "%.0f", v);
+            return buf;
+        }
         if (isSlot(index))
         {
             const ParamSpec* spec = slotSpec(index);
@@ -2438,8 +2484,6 @@ private:
     };
     static constexpr Migration kMigrations[] = {
         { &kNamBlockDescriptor, kNamToneKey, kNamParamBass, kNamParamTreble },             // NamBlock.hpp
-        { &kLooperBlockDescriptor, kLooperCountInKey, kLooperParamMode, kLooperParamClick }, // LooperBlock.hpp
-        { &kLooperBlockDescriptor, kLooperLatencyKey, kLooperParamLatency, kLooperParamLatency },
     };
 
     // A block's migration: the slot and which one (a type can have several)
@@ -2477,9 +2521,58 @@ private:
         return changed;
     }
 
-    // Replaces the chain (undo, redo, presets): the host gets every block's values back
+    // The retired Looper block's settings as the global looper's, in LooperParam order (real values); the
+    // footswitches are left out
+    using LooperSettings = std::array<float, kLooperParamCount>;
+
+    // Takes Looper blocks out of a chain (owner, 2026-11-01: the looper is global now): MIDI mappings to their
+    // controls move to the global looper's, and the first one's settings are returned (as it had them: one saved
+    // before Count In or Latency existed gets Free mode and the default latency, as the DSP ran it)
+    static std::optional<LooperSettings> retireLoopers(ChainState& chain)
+    {
+        std::optional<LooperSettings> settings;
+        for (int i = static_cast<int>(chain.blocks.size()) - 1; i >= 0; --i)
+        {
+            const BlockState& block = chain.blocks[static_cast<size_t>(i)];
+            if (block.typeId != kLooperBlockDescriptor.typeId)
+                continue;
+            LooperSettings values {};
+            for (int p = 0; p < kLooperParamCount; ++p)
+                values[static_cast<size_t>(p)] = kLooperBlockDescriptor.params[p].toValue(block.params[p]);
+            if (!block.config.contains(kLooperCountInKey))
+            {
+                for (int p = kLooperParamMode; p <= kLooperParamClick; ++p)
+                    values[static_cast<size_t>(p)] = kLooperBlockDescriptor.params[p].def;
+                values[kLooperParamMode] = 1.0f; // it was a Free looper
+            }
+            if (!block.config.contains(kLooperLatencyKey))
+                values[kLooperParamLatency] = kLooperBlockDescriptor.params[kLooperParamLatency].def;
+            settings = values; // the first one's, as the loop goes from the last to the first
+            for (MidiMapping& mapping : chain.midi)
+                for (int p = 0; p < kLooperParamCount; ++p)
+                    if (mapping.param == slotParam(block.slot, p))
+                        mapping.param = looperParam(p);
+            chain.remove(i);
+        }
+        return settings;
+    }
+
+    // A chain from the host (a project) had a Looper block: the global looper takes its settings, and the DSP gets
+    // the chain without it (in the idle callback, once the host is connected)
+    void retireLoopersFromHost()
+    {
+        if (std::optional<LooperSettings> settings = retireLoopers(fChain))
+        {
+            fRetiredLooper = settings;
+            fSavedChain = fChain;
+        }
+    }
+
+    // Replaces the chain (undo, redo, presets): the host gets every block's values back. A preset's Looper block
+    // is left out; the global looper keeps its own settings.
     void applyChain(ChainState chain, bool restoreLatches = false)
     {
+        retireLoopers(chain);
         migrateBlocks(chain);
         fChain = std::move(chain);
         for (const BlockState& block : fChain.blocks)
@@ -4317,6 +4410,7 @@ private:
         if (std::optional<ChainState> chain = ChainState::fromJson(*json))
         {
             fChain = std::move(*chain);
+            retireLoopersFromHost();
             fMigratedSlots = migrateBlocks(fChain);
             fSavedChain = fChain;
             fUndo.clear();
@@ -4697,7 +4791,7 @@ private:
         fHits.push_back({ r, kind, index });
     }
 
-    enum class Icon { Power, Gear, TuningFork, Metronome, Fretbored, GitHub, Up, Home, Star, Folder };
+    enum class Icon { Power, Gear, TuningFork, Metronome, Loop, Fretbored, GitHub, Up, Home, Star, Folder };
 
     // A square button with an icon instead of a label
     void drawIconButton(const Rect& r, Icon icon, bool on, Hit kind, int index)
@@ -4792,6 +4886,17 @@ private:
             lineTo(cx + 5.0f, cy + 3.5f);
             moveTo(cx, cy + 3.5f);
             lineTo(cx + 5.5f, cy - 6.5f);
+            stroke();
+            break;
+
+        case Icon::Loop:
+            // the looper's infinity sign (its block's glyph)
+            beginPath();
+            moveTo(cx, cy);
+            bezierTo(cx - 3.0f, cy - 5.0f, cx - 9.0f, cy - 5.0f, cx - 9.0f, cy);
+            bezierTo(cx - 9.0f, cy + 5.0f, cx - 3.0f, cy + 5.0f, cx, cy);
+            bezierTo(cx + 3.0f, cy - 5.0f, cx + 9.0f, cy - 5.0f, cx + 9.0f, cy);
+            bezierTo(cx + 9.0f, cy + 5.0f, cx + 3.0f, cy + 5.0f, cx, cy);
             stroke();
             break;
 
@@ -5062,6 +5167,13 @@ private:
             return { "Tap Tempo",
                      "Click this button in time with the music, four times or more, and the metronome takes the "
                      "tempo you tap. The T key does the same while the metronome panel is open." };
+        case Hit::LooperPanel:
+            return { "Looper",
+                     "Opens the looper in place of the chain. It records what you hear, after the whole rig, and "
+                     "keeps playing when you load another preset, so you can loop a part with one sound and play "
+                     "over it with another. The dot on this button shows its state while the page is closed: red "
+                     "recording, amber overdubbing, green playing. Map footswitches to its buttons with MIDI learn "
+                     "(right-click a button)." };
         case Hit::MetroPanel:
             return { "Metronome Settings",
                      "Opens the metronome panel: tempo, time signature, accents, beat grouping, subdivisions, "
@@ -5900,13 +6012,13 @@ private:
     {
         surface(0, 0, fWidth, kTopBarHeight, 0.0f, Surface::Bar);
         // the logo at full size from ~1000 px wide; narrower windows shrink it so the links still fit (see below)
-        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 682.0f);
+        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 728.0f);
 
         // preset menu with the preset's name (• when changed since it was saved or opened)
         constexpr float bh = 36.0f, by = (kTopBarHeight - bh) / 2;
         const std::string preset = presetName() + (presetModified() ? " •" : "");
-        // narrower on a small window, so the icon buttons on the right (316 px with both links) still fit
-        const float presetWidth = std::clamp(fWidth - 316.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
+        // narrower on a small window, so the icon buttons on the right (362 px with both links) still fit
+        const float presetWidth = std::clamp(fWidth - 362.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
                                              280.0f);
         const Rect presetButton { logoRight + 28.0f, by, presetWidth, bh };
         fPresetButtonX = presetButton.x;
@@ -5937,10 +6049,20 @@ private:
         drawIconButton({ bypass.x - step, by, iw, bh }, Icon::Gear, fDialog == Dialog::Settings, Hit::OpenSettings, 0);
         drawIconButton({ bypass.x - 2 * step, by, iw, bh }, Icon::TuningFork, fParams[kParamTuner] >= 0.5f,
                        Hit::Toggle, kParamTuner);
+        // the looper (owner, 2026-11-01): opens its page; a dot in the state's colour while it records or plays
+        const Rect loop { bypass.x - 3 * step, by, iw, bh };
+        drawIconButton(loop, Icon::Loop, fLooperPanel, Hit::LooperPanel, 0);
+        if (const LooperReport report = looperReport(); report.state != LooperState::Empty)
+        {
+            beginPath();
+            circle(loop.x + loop.w - 7.0f, loop.y + 7.0f, 3.5f);
+            fillColor(looperStateColor(report.state));
+            fill();
+        }
 
         // Metronome: on/off, flashing on every beat, and ▾ for its panel
         const bool running = fParams[kParamMetronome] >= 0.5f;
-        const Rect metro { bypass.x - 3 * step - 30.0f, by, iw, bh };
+        const Rect metro { bypass.x - 4 * step - 30.0f, by, iw, bh };
         drawIconButton(metro, Icon::Metronome, running, Hit::Toggle, kParamMetronome);
         const float pulse = beatPulse();
         if (running && pulse > 0.0f)
@@ -6346,6 +6468,434 @@ private:
             const Rect r { cx - w / 2, viewTop, w, std::min(viewHeight, 160.0f) };
             drawChevrons(r, active, inTune);
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Looper (owner, 2026-11-01: global, out of the chain; mockup 3 of ten, "Timeline with passes")
+
+    LooperReport looperReport() const
+    {
+        LooperReport report;
+        report.decodeState(fParams[kParamLooperState]);
+        report.position = fParams[kParamLooperPosition];
+        report.count = static_cast<int>(fParams[kParamLooperCount] + 0.5f);
+        report.seconds = fParams[kParamLooperLength];
+        return report;
+    }
+
+    static Color looperStateColor(LooperState state)
+    {
+        switch (state)
+        {
+        case LooperState::Recording: return theme::bad;
+        case LooperState::Overdubbing: return theme::warn;
+        case LooperState::Playing: return theme::good;
+        case LooperState::CountIn: return theme::accent;
+        case LooperState::Empty:
+        case LooperState::Stopped: break;
+        }
+        return theme::textDim;
+    }
+
+    // The looper's state and waveform cells from the DSP: a new generation (a cleared loop) empties the waveform
+    void looperOutput(uint32_t index, float value)
+    {
+        if (index == kParamLooperState)
+        {
+            LooperReport report;
+            report.decodeState(value);
+            if (report.generation != fLooperGeneration)
+            {
+                fLooperGeneration = report.generation;
+                for (auto& lane : fLooperWave)
+                    std::fill(std::begin(lane), std::end(lane), uint8_t { 0 });
+            }
+            return;
+        }
+        const LooperCell cell = decodeLooperCell(value);
+        if (cell.generation == fLooperGeneration)
+            fLooperWave[cell.lane][cell.column] = static_cast<uint8_t>(cell.peak);
+    }
+
+    float looperValue(int param) const { return fParams[looperParam(param)]; }
+    int looperInt(int param) const { return static_cast<int>(std::lround(looperValue(param))); }
+
+    // One of the looper's footswitches: an icon over its name, lit in `color` while `on`; a momentary host parameter
+    void drawLooperSwitch(const Rect& r, int param, const char* name, bool on, const Color& color)
+    {
+        const bool hover = r.contains(fMouseX, fMouseY);
+        if (on)
+            onSurface(r, color, 8.0f);
+        else
+            surface(r.x, r.y, r.w, r.h, 8.0f, Surface::Button, hover);
+        const float cx = r.x + r.w / 2, cy = r.y + r.h / 2 - 9.0f;
+        const Color ink = on ? color : theme::text;
+        strokeColor(ink);
+        strokeWidth(1.4f);
+        lineJoin(ROUND);
+        beginPath();
+        if (param == kLooperParamRecDub)
+        {
+            circle(cx, cy, 9.0f);
+            stroke();
+            beginPath();
+            circle(cx, cy, 5.0f);
+            fillColor(ink);
+            fill();
+        }
+        else if (param == kLooperParamPlayStop)
+        {
+            const LooperState state = looperReport().state;
+            if (state == LooperState::Playing || state == LooperState::Overdubbing || state == LooperState::Recording)
+                rect(cx - 7.0f, cy - 7.0f, 14.0f, 14.0f); // what a press does: stop
+            else
+            {
+                moveTo(cx - 6.0f, cy - 9.0f);
+                lineTo(cx + 9.0f, cy);
+                lineTo(cx - 6.0f, cy + 9.0f);
+                closePath();
+            }
+            stroke();
+        }
+        else
+        {
+            moveTo(cx - 7.0f, cy - 7.0f);
+            lineTo(cx + 7.0f, cy + 7.0f);
+            moveTo(cx + 7.0f, cy - 7.0f);
+            lineTo(cx - 7.0f, cy + 7.0f);
+            stroke();
+        }
+        lineJoin(MITER);
+        label(cx, r.y + r.h - 14.0f, name, on ? theme::text : theme::textDim, 12.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+        fHits.push_back({ r, Hit::Momentary, static_cast<int>(looperParam(param)) });
+    }
+
+    // A whole-number setting as "−  4  +" under its name; dragging the number changes it too. Returns its width.
+    float drawLooperStepper(float x, float y, int param, const char* name, float width = 92.0f)
+    {
+        const uint32_t index = looperParam(param);
+        label(x, y, name, theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        const float by = y + 12.0f, bh = 28.0f;
+        drawValueButton({ x, by, 26.0f, bh }, "−", false, Hit::Step, index, -1.0f);
+        drawValueButton({ x + width - 26.0f, by, 26.0f, bh }, "+", false, Hit::Step, index, 1.0f);
+        label(x + width / 2, by + bh / 2, valueText(index).c_str(), theme::text, 13.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+        fHits.push_back({ { x + 28.0f, by, width - 56.0f, bh }, Hit::Knob, static_cast<int>(index) });
+        return width;
+    }
+
+    // "1:07.3"
+    static std::string looperTime(float seconds)
+    {
+        char buf[32];
+        const int tenths = static_cast<int>(std::max(0.0f, seconds) * 10.0f + 0.5f);
+        std::snprintf(buf, sizeof(buf), "%d:%02d.%d", tenths / 600, tenths / 10 % 60, tenths % 10);
+        return buf;
+    }
+
+    // The looper page: the transport and the state on top, the loop as a timeline with a lane per pass (the count-in
+    // before it), and the settings under it, split into how the loop is made and how it plays back
+    void drawLooper()
+    {
+        const Rect panel { 16.0f, kTopBarHeight + 16.0f, fWidth - 32.0f,
+                           fHeight - kBottomBarHeight - kTopBarHeight - 32.0f };
+        surface(panel.x, panel.y, panel.w, panel.h, 10.0f, Surface::Panel);
+        const LooperReport report = looperReport();
+        const LooperState state = report.state;
+        const Color stateColor = looperStateColor(state);
+        const bool countInMode = looperInt(kLooperParamMode) == 0;
+        const int beats = std::clamp(looperInt(kLooperParamBeats), 1, 12);
+        const int measures = std::clamp(looperInt(kLooperParamMeasures), 1, 16);
+        const int loops = std::clamp(looperInt(kLooperParamLoops), 1, 8);
+        const int countIn = std::clamp(looperInt(kLooperParamCountIn), 0, 16);
+        const float bpm = looperValue(kLooperParamBpm);
+
+        // the loop is on the bar grid if it's as long as the Count In settings make one (they may have changed since)
+        const float gridSeconds = measures * beats * 60.0f / std::max(1.0f, bpm);
+        const bool grid = countInMode && (state == LooperState::Empty || state == LooperState::CountIn
+                                          || std::fabs(report.seconds - gridSeconds) < gridSeconds * 0.01f + 0.01f);
+
+        // --- transport and state
+        const float px = panel.x + 16.0f, right = panel.x + panel.w - 16.0f;
+        label(px, panel.y + 24.0f, "Looper", theme::text, 16.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        const float ty = panel.y + 44.0f, th = 64.0f;
+        const bool recording = state == LooperState::Recording || state == LooperState::Overdubbing
+                            || state == LooperState::CountIn;
+        drawLooperSwitch({ px, ty, 112.0f, th }, kLooperParamRecDub, "Rec / Dub", recording, stateColor);
+        const bool running = state == LooperState::Playing || state == LooperState::Overdubbing
+                          || state == LooperState::Recording;
+        drawLooperSwitch({ px + 120.0f, ty, 112.0f, th }, kLooperParamPlayStop, running ? "Stop" : "Play", false,
+                         theme::good);
+        drawLooperSwitch({ px + 240.0f, ty, 96.0f, th }, kLooperParamClear, "Clear", false, theme::text);
+
+        const char* stateName = state == LooperState::Recording   ? "RECORDING"
+                              : state == LooperState::Overdubbing ? "OVERDUB"
+                              : state == LooperState::Playing     ? "PLAYING"
+                              : state == LooperState::Stopped     ? "STOPPED"
+                              : state == LooperState::CountIn     ? "COUNTING IN"
+                                                                  : "READY";
+        const float sx = px + 360.0f;
+        label(sx, ty + 20.0f, stateName, stateColor, 22.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        // where it is: the pass, and the bar and beat on the grid (or the time)
+        std::string detail;
+        char buf[96];
+        const float beatsIn = report.position * measures * beats;
+        const int bar = std::clamp(static_cast<int>(beatsIn / beats) + 1, 1, measures);
+        const int beat = std::clamp(static_cast<int>(beatsIn) % beats + 1, 1, beats);
+        if (state == LooperState::CountIn)
+            std::snprintf(buf, sizeof(buf), "Click %d of %d", report.count, countIn);
+        else if (state == LooperState::Recording && !grid)
+            std::snprintf(buf, sizeof(buf), "Pass 1  ·  %s", looperTime(report.seconds).c_str());
+        else if ((state == LooperState::Recording || state == LooperState::Overdubbing) && grid)
+            std::snprintf(buf, sizeof(buf), "Pass %d of %d  ·  Bar %d  ·  Beat %d", report.pass,
+                          std::max(loops, report.pass), bar, beat);
+        else if (state == LooperState::Overdubbing)
+            std::snprintf(buf, sizeof(buf), "Pass %d  ·  %s of %s", report.pass,
+                          looperTime(report.position * report.seconds).c_str(), looperTime(report.seconds).c_str());
+        else if ((state == LooperState::Playing || state == LooperState::Stopped) && grid)
+            std::snprintf(buf, sizeof(buf), "Bar %d  ·  Beat %d", bar, beat);
+        else if (state == LooperState::Playing || state == LooperState::Stopped)
+            std::snprintf(buf, sizeof(buf), "%s of %s", looperTime(report.position * report.seconds).c_str(),
+                          looperTime(report.seconds).c_str());
+        else
+            std::snprintf(buf, sizeof(buf), "Records what you hear; keeps playing when you change presets");
+        detail = buf;
+        label(sx, ty + 46.0f, detail.c_str(), theme::textDim, 13.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+
+        // the settings at a glance, on the right when there's room
+        if (right - sx > 640.0f)
+        {
+            if (countInMode)
+            {
+                std::snprintf(buf, sizeof(buf), "%.0f BPM  ·  %d/4  ·  %d bar%s", bpm, beats, measures,
+                              measures == 1 ? "" : "s");
+                label(right, ty + 20.0f, buf, theme::text, 14.0f, ALIGN_RIGHT | ALIGN_MIDDLE);
+                std::snprintf(buf, sizeof(buf), "Count-in %d  ·  %d pass%s", countIn, loops, loops == 1 ? "" : "es");
+                label(right, ty + 44.0f, buf, theme::textDim, 12.0f, ALIGN_RIGHT | ALIGN_MIDDLE);
+            }
+            else
+            {
+                label(right, ty + 20.0f, "Free", theme::text, 14.0f, ALIGN_RIGHT | ALIGN_MIDDLE);
+                label(right, ty + 44.0f,
+                      report.seconds > 0.0f ? ("Loop " + looperTime(report.seconds)).c_str() : "Up to a minute",
+                      theme::textDim, 12.0f, ALIGN_RIGHT | ALIGN_MIDDLE);
+            }
+        }
+
+        // --- the settings, at the bottom: how the loop is made, and how it plays back
+        constexpr float rowH = 56.0f;
+        const float settingsTop = panel.y + panel.h - 2 * rowH + 6.0f;
+        beginPath();
+        moveTo(px, settingsTop - 12.0f);
+        lineTo(right, settingsTop - 12.0f);
+        strokeColor(theme::border);
+        strokeWidth(1.0f);
+        stroke();
+        drawLooperSettings(px, settingsTop, right, countInMode);
+
+        // --- the timeline
+        const float tlTop = ty + th + 34.0f; // room for the bar numbers
+        const float tlBottom = settingsTop - 28.0f;
+        if (tlBottom - tlTop < 40.0f)
+            return;
+        float gx = px;
+        // the count-in: a dot per click, lit as they're counted
+        if (countInMode && countIn > 0)
+        {
+            const Rect box { px, tlTop, 92.0f, tlBottom - tlTop };
+            label(box.x, tlTop - 12.0f, "Count-in", theme::textFaint, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+            fillRect(box.x, box.y, box.w, box.h, Color(1.0f, 1.0f, 1.0f, 0.03f), 6.0f);
+            const int perRow = std::min(4, std::max(1, beats));
+            const int rows = (countIn + perRow - 1) / perRow;
+            const float dy = std::min(22.0f, (box.h - 16.0f) / std::max(1, rows));
+            for (int k = 0; k < countIn; ++k)
+            {
+                const float cx = box.x + 16.0f + (k % perRow) * 20.0f;
+                const float cy = box.y + box.h / 2 - (rows - 1) * dy / 2 + (k / perRow) * dy;
+                const bool lit = state == LooperState::CountIn ? k < report.count : state != LooperState::Empty;
+                beginPath();
+                circle(cx, cy, k % beats == 0 ? 4.5f : 3.5f);
+                fillColor(lit ? (state == LooperState::CountIn && k == report.count - 1 ? theme::accent
+                                                                                         : theme::accent.withAlpha(0.45f))
+                              : Color(1.0f, 1.0f, 1.0f, 0.12f));
+                fill();
+            }
+            gx = box.x + box.w + 12.0f;
+        }
+        const Rect tl { gx, tlTop, right - gx, tlBottom - tlTop };
+        fillRect(tl.x, tl.y, tl.w, tl.h, Color(0.0f, 0.0f, 0.0f, 0.35f), 6.0f);
+
+        // bars and beats (or seconds for a free loop)
+        if (grid)
+        {
+            const int total = measures * beats;
+            for (int b = 0; b <= total; ++b)
+            {
+                const float x = tl.x + tl.w * b / total;
+                const bool barLine = b % beats == 0;
+                if (b > 0 && b < total && (barLine || total <= 64))
+                {
+                    beginPath();
+                    moveTo(x, tl.y + (barLine ? 0.0f : tl.h * 0.3f));
+                    lineTo(x, tl.y + tl.h - (barLine ? 0.0f : tl.h * 0.3f));
+                    strokeColor(Color(1.0f, 1.0f, 1.0f, barLine ? 0.2f : 0.07f));
+                    stroke();
+                }
+                if (barLine && b < total && (measures <= 8 || (b / beats) % 2 == 0))
+                {
+                    std::snprintf(buf, sizeof(buf), "Bar %d", b / beats + 1);
+                    label(x + 6.0f, tl.y - 12.0f, buf, theme::textFaint, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+                }
+            }
+        }
+        else if (report.seconds > 0.5f && state != LooperState::Recording)
+        {
+            const float step = report.seconds > 30.0f ? 5.0f : report.seconds > 10.0f ? 2.0f : 1.0f;
+            for (float t = step; t < report.seconds; t += step)
+            {
+                const float x = tl.x + tl.w * t / report.seconds;
+                beginPath();
+                moveTo(x, tl.y);
+                lineTo(x, tl.y + tl.h);
+                strokeColor(Color(1.0f, 1.0f, 1.0f, 0.08f));
+                stroke();
+                label(x + 4.0f, tl.y - 12.0f, looperTime(t).c_str(), theme::textFaint, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+            }
+        }
+
+        // what's been played round the loop so far, tinted, and the playhead
+        const bool moving = state == LooperState::Playing || state == LooperState::Overdubbing
+                         || (state == LooperState::Recording && grid) || state == LooperState::Stopped;
+        const float headX = tl.x + tl.w * std::clamp(report.position, 0.0f, 1.0f);
+        if (moving && state != LooperState::Stopped)
+            fillRect(tl.x, tl.y, headX - tl.x, tl.h, stateColor.withAlpha(0.08f), 6.0f);
+
+        // the lanes: a pass each (as many as Count In will record, or as the loop has)
+        int lanes = std::max(report.lanes, report.pass);
+        if (countInMode && state != LooperState::Empty)
+            lanes = std::max(lanes, loops);
+        if (state == LooperState::Empty || state == LooperState::CountIn)
+            lanes = countInMode ? loops : 1;
+        lanes = std::clamp(lanes, 1, kLooperWaveLanes);
+        const float laneH = (tl.h - 8.0f) / lanes;
+        const float colW = tl.w / kLooperWaveColumns;
+        for (int lane = 0; lane < lanes; ++lane)
+        {
+            const float ly = tl.y + 4.0f + lane * laneH;
+            const bool live = report.pass == lane + 1;
+            if (laneH >= 24.0f)
+            {
+                std::snprintf(buf, sizeof(buf), "Pass %d", lane + 1);
+                label(tl.x + 8.0f, ly + 9.0f, buf, live ? stateColor : theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+            }
+            const float waveTop = ly + (laneH >= 24.0f ? 16.0f : 2.0f), waveH = laneH - (laneH >= 24.0f ? 20.0f : 4.0f);
+            const float mid = waveTop + waveH / 2;
+            bool any = false;
+            beginPath();
+            for (int c = 0; c < kLooperWaveColumns; ++c)
+            {
+                const uint8_t peak = fLooperWave[lane][c];
+                if (peak == 0)
+                    continue;
+                any = true;
+                const float half = std::max(0.5f, waveH / 2 * peak / 255.0f);
+                const float x = tl.x + (c + 0.5f) * colW;
+                moveTo(x, mid - half);
+                lineTo(x, mid + half);
+            }
+            if (any)
+            {
+                strokeColor(live ? stateColor : theme::accent.withAlpha(0.85f));
+                strokeWidth(std::max(1.0f, colW * 0.55f));
+                lineCap(ROUND);
+                stroke();
+                lineCap(BUTT);
+                strokeWidth(1.0f);
+            }
+            else if (laneH >= 24.0f && state != LooperState::Empty && !(state == LooperState::Recording && lane == 0))
+            {
+                std::snprintf(buf, sizeof(buf), lane == 0 ? "Recording" : "Starts when pass %d comes round", lane);
+                label(tl.x + 70.0f, mid, buf, theme::textFaint, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+            }
+        }
+        // a free recording's length isn't known yet, so its waveform comes when the loop closes
+        if (state == LooperState::Recording && !grid)
+        {
+            std::snprintf(buf, sizeof(buf), "Recording  %s", looperTime(report.seconds).c_str());
+            label(tl.x + tl.w / 2, tl.y + tl.h / 2, buf, stateColor, 16.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+        }
+        if (state == LooperState::Empty)
+        {
+            if (countInMode)
+                std::snprintf(buf, sizeof(buf),
+                              "Press Rec / Dub: %d click%s count%s you in, then it records %d bar%s%s", countIn,
+                              countIn == 1 ? "" : "s", countIn == 1 ? "s" : "", measures, measures == 1 ? "" : "s",
+                              loops > 1 ? " and overdubs the passes after it" : " and plays it back");
+            else
+                std::snprintf(buf, sizeof(buf), "Press Rec / Dub to record, and again to close the loop");
+            label(tl.x + tl.w / 2, tl.y + tl.h / 2, buf, theme::textDim, 13.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+        }
+        if (moving)
+        {
+            beginPath();
+            moveTo(headX, tl.y - 4.0f);
+            lineTo(headX, tl.y + tl.h + 4.0f);
+            strokeColor(stateColor);
+            strokeWidth(2.0f);
+            stroke();
+            strokeWidth(1.0f);
+        }
+    }
+
+    // The looper's settings in two rows: how the loop is made (the Count In ones are dim in Free mode), and how it
+    // plays back
+    void drawLooperSettings(float x, float y, float right, bool countInMode)
+    {
+        label(x, y + 2.0f, "Make the loop", theme::accent, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        float cx = x + 108.0f;
+        const float row = y - 10.0f;
+        drawValueButton({ cx, row + 12.0f, 80.0f, 28.0f }, "Count In", countInMode, Hit::SetValue,
+                        looperParam(kLooperParamMode), 0.0f);
+        drawValueButton({ cx + 82.0f, row + 12.0f, 60.0f, 28.0f }, "Free", !countInMode, Hit::SetValue,
+                        looperParam(kLooperParamMode), 1.0f);
+        cx += 158.0f;
+        if (!countInMode)
+            globalAlpha(0.45f);
+        cx += drawLooperStepper(cx, row, kLooperParamBpm, "Tempo (BPM)", 104.0f) + 6.0f;
+        drawButton({ cx, row + 12.0f, 50.0f, 28.0f }, "Tap", false, theme::accent, Hit::Momentary,
+                   static_cast<int>(looperParam(kLooperParamTap)));
+        cx += 62.0f;
+        const std::pair<int, const char*> steppers[] = {
+            { kLooperParamBeats, "Beats" }, { kLooperParamMeasures, "Bars" },
+            { kLooperParamCountIn, "Count-in" }, { kLooperParamLoops, "Passes" } };
+        for (const auto& [param, name] : steppers)
+        {
+            if (cx + 84.0f > right)
+                break;
+            cx += drawLooperStepper(cx, row, param, name, 84.0f) + 8.0f;
+        }
+        globalAlpha(1.0f);
+
+        const float y2 = y + 56.0f;
+        label(x, y2 + 2.0f, "Play it back", theme::accent, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        cx = x + 108.0f;
+        const float knobY = y2 + 12.0f;
+        cx += drawSideKnob(cx, knobY, looperParam(kLooperParamLevel), "Level") + 12.0f;
+        cx += drawSideKnob(cx, knobY, looperParam(kLooperParamFeedback), "Feedback") + 12.0f;
+        drawButton({ cx, knobY - 14.0f, 84.0f, 28.0f }, "Reverse", looperValue(kLooperParamReverse) >= 0.5f,
+                   theme::accent, Hit::Toggle, static_cast<int>(looperParam(kLooperParamReverse)));
+        cx += 92.0f;
+        drawButton({ cx, knobY - 14.0f, 96.0f, 28.0f }, "Half Speed", looperValue(kLooperParamHalf) >= 0.5f,
+                   theme::accent, Hit::Toggle, static_cast<int>(looperParam(kLooperParamHalf)));
+        cx += 112.0f;
+        if (cx + 106.0f <= right)
+        {
+            if (!countInMode)
+                globalAlpha(0.45f);
+            cx += drawSideKnob(cx, knobY, looperParam(kLooperParamClick), "Click") + 12.0f;
+            globalAlpha(1.0f);
+        }
+        if (cx + 106.0f <= right)
+            drawSideKnob(cx, knobY, looperParam(kLooperParamLatency), "Latency");
     }
 
     // The note (its name in the state colour, the octave beside it), the cents and frequency under it, and the
@@ -9401,7 +9951,13 @@ private:
     bool fMetroPanel = false;
     Rect fSliderRect; // the slider being dragged (w == 0: a knob is)
     TapTempo fTapTempo;                          // the metronome's
-    std::array<TapTempo, kMaxBlocks> fLooperTaps; // each looper's Tap, by slot
+    TapTempo fLooperTap; // the looper's Tap, timed as the DSP times it
+    bool fLooperPanel = false; // the looper page is open (in the chain's place)
+    std::optional<LooperSettings> fRetiredLooper; // a project's Looper block's settings, for the global looper
+    // the loop's waveform as the DSP streams it (looperOutput()): a lane per pass, of the loop of generation
+    // fLooperGeneration (-1 before the state arrives)
+    uint8_t fLooperWave[kLooperWaveLanes][kLooperWaveColumns] {};
+    int fLooperGeneration = -1;
     std::chrono::steady_clock::time_point fTapAt, fBeatAt;
 
     // tuner display
