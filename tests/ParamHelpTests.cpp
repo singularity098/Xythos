@@ -55,7 +55,7 @@ TEST_CASE("every global control has help")
         // outputs and internal parameters aren't controls
         if (spec.flags & kParamFlagOutput)
             continue;
-        if (index == kParamChainRevision || index == kParamMidiLearn)
+        if (index == kParamChainRevision || index == kParamMidiLearn || index == kParamLooperWake)
             continue;
         const char* help = globalParamHelp(index);
         CAPTURE(std::string(spec.name));

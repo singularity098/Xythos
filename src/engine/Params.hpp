@@ -126,9 +126,12 @@ enum LaterParam : uint32_t {
     kParamLooperLength,     // output, hidden: the loop's length in seconds
     kParamLooperCellBase,   // outputs, hidden: waveform cells (encodeLooperCell()), the first the one written last
     kParamLooperCellEnd = kParamLooperCellBase + 8,
+    // hidden, internal: the UI pulses it (1, then 0 again) when the looper's page opens, so the DSP reserves the
+    // loop's memory (23 MB) in this run only. Owner, 2026-11-01: not in instances that never use the looper, and
+    // the looper is ephemeral: nothing about it survives a save, so a reopened project starts without the memory.
+    kParamLooperWake = kParamLooperCellEnd,
 
-    // (new parameters go here, the first one = kParamLooperCellEnd, and kParamCount after them)
-    kParamCount = kParamLooperCellEnd
+    kParamCount
 };
 
 constexpr uint32_t slotBypassParam(int slot)

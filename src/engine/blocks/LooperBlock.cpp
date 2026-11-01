@@ -4,6 +4,7 @@
 #include "engine/blocks/LooperBlock.hpp"
 
 #include <memory>
+#include <vector>
 
 namespace xythos {
 
@@ -21,7 +22,15 @@ const char* const kLoopChoices[] = { "1", "2", "3", "4", "5", "6", "7", "8" };
 // saved with one still build, until the UI moves its settings to the global looper and takes it out.
 class LooperBlock : public Block {
 public:
-    void prepare(double sampleRate, uint32_t /*maxFrames*/) override { fLooper.prepare(sampleRate); }
+    void prepare(double sampleRate, uint32_t /*maxFrames*/) override
+    {
+        // the block has its loop's memory from the start, as it always did
+        for (std::vector<float>& buffer : fMemory)
+            if (buffer.size() != kLooperMaxSamples)
+                buffer.assign(kLooperMaxSamples, 0.0f);
+        fLooper.attach(fMemory[0].data(), fMemory[1].data());
+        fLooper.prepare(sampleRate);
+    }
 
     bool configure(const nlohmann::json& config) override
     {
@@ -39,6 +48,7 @@ public:
     void reset() override { fLooper.reset(); }
 
 private:
+    std::vector<float> fMemory[2];
     Looper fLooper;
     float* fClick = nullptr;
 };

@@ -1531,6 +1531,10 @@ protected:
             fLooperPanel = !fLooperPanel;
             if (fLooperPanel)
             {
+                // the DSP reserves the loop's memory now (only for this run: the pulse ends in 250 ms, so a saved
+                // project holds 0)
+                setValue(kParamLooperWake, 1.0f);
+                fLooperWakeAt = std::chrono::steady_clock::now();
                 fMetroPanel = false;
                 if (fParams[kParamTuner] >= 0.5f)
                     setValue(kParamTuner, 0.0f);
@@ -1869,6 +1873,9 @@ protected:
             repaint(); // the readout itself counts frames, so keep drawing
         if (fMomentaryReleasePending && std::chrono::steady_clock::now() - fMomentaryPressedAt >= kMomentaryMinHold)
             releaseMomentary();
+        if (fParams[kParamLooperWake] >= 0.5f
+            && std::chrono::steady_clock::now() - fLooperWakeAt > std::chrono::milliseconds(250))
+            setValue(kParamLooperWake, 0.0f);
         if (fRetiredLooper)
         {
             // a project's Looper block: its settings go to the global looper and the chain goes without it
@@ -9953,6 +9960,7 @@ private:
     TapTempo fTapTempo;                          // the metronome's
     TapTempo fLooperTap; // the looper's Tap, timed as the DSP times it
     bool fLooperPanel = false; // the looper page is open (in the chain's place)
+    std::chrono::steady_clock::time_point fLooperWakeAt {}; // when Looper Wake was pulsed
     std::optional<LooperSettings> fRetiredLooper; // a project's Looper block's settings, for the global looper
     // the loop's waveform as the DSP streams it (looperOutput()): a lane per pass, of the loop of generation
     // fLooperGeneration (-1 before the state arrives)

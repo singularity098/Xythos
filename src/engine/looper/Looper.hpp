@@ -130,7 +130,8 @@ public:
         fFeedback.snap(1.0f);
     }
 
-    // Non-RT: allocates the loop (once). Prepared again at the same rate (the host restarting audio) it keeps the loop.
+    // Non-RT. Prepared again at the same rate (the host restarting audio) it keeps the loop. The loop's memory comes
+    // separately (attach()), so an unused looper costs none.
     void prepare(double sampleRate)
     {
         if (fPrepared && sampleRate == fSampleRate)
@@ -140,10 +141,6 @@ public:
         }
         fPrepared = true;
         fSampleRate = sampleRate;
-        // the loop holds a fixed number of samples (no reallocation if prepared again at another rate)
-        for (std::vector<float>& buffer : fBuffer)
-            if (buffer.size() != kLooperMaxSamples)
-                buffer.assign(kLooperMaxSamples, 0.0f);
         fLevel.prepare(sampleRate);
         fFeedback.prepare(sampleRate);
         fFade.prepare(sampleRate, 0.005);
@@ -153,6 +150,17 @@ public:
         fClickData = nullptr;
         clear();
     }
+
+    // The loop's memory: two buffers of kLooperMaxSamples (zeroed), which stay the caller's and must outlive the
+    // looper's use of them. RT-safe (it only takes the pointers). Until then the looper passes audio through and
+    // ignores Rec/Dub.
+    void attach(float* left, float* right)
+    {
+        fBuffer[0] = left;
+        fBuffer[1] = right;
+    }
+
+    bool hasMemory() const { return fBuffer[0] != nullptr && fBuffer[1] != nullptr; }
 
     // Loopers saved before Count In existed stay in Free mode (LooperBlock's config); the global looper has it
     void setHasCountIn(bool hasCountIn) { fHasCountIn = hasCountIn; }
@@ -213,6 +221,11 @@ public:
     {
         fClickOut = click;
         fSamples += frames;
+        if (fPendingRecDub && hasMemory())
+        {
+            fPendingRecDub = false;
+            recDub();
+        }
         for (uint32_t i = 0; i < frames; ++i)
         {
             if (fTimed)
@@ -410,7 +423,7 @@ private:
         const float inPeak = inputPeak(io, numChannels, i); // what's played in, before the loop joins it
         for (uint32_t ch = 0; ch < numChannels; ++ch)
         {
-            std::vector<float>& buffer = fBuffer[ch];
+            float* buffer = fBuffer[ch];
             const float played = static_cast<float>(buffer[index] + (buffer[next] - buffer[index]) * frac);
             if (fState == LooperState::Overdubbing && !tailing) // the tail just wrote this input
                 buffer[write] = buffer[write] * feedback + io[ch][i];
@@ -470,6 +483,11 @@ private:
 
     void recDub()
     {
+        if (!hasMemory())
+        {
+            fPendingRecDub = true; // done when the memory comes (process())
+            return;
+        }
         endTail();
         switch (fState)
         {
@@ -554,7 +572,7 @@ private:
     {
         for (uint32_t ch = 0; ch < 2; ++ch)
         {
-            std::vector<float>& buffer = fBuffer[ch];
+            float* buffer = fBuffer[ch];
             for (uint32_t k = 0; k < looper_detail::kFadeSamples; ++k)
             {
                 const float g = static_cast<float>(k + 1) / looper_detail::kFadeSamples;
@@ -577,7 +595,7 @@ private:
         if (fTailPos >= fLength)
             return;
         for (uint32_t ch = 0; ch < 2; ++ch)
-            std::fill(fBuffer[ch].begin() + fTailPos, fBuffer[ch].begin() + fLength, 0.0f);
+            std::fill(fBuffer[ch] + fTailPos, fBuffer[ch] + fLength, 0.0f);
         finishTail();
     }
 
@@ -699,7 +717,8 @@ private:
 
     bool fPrepared = false;
     double fSampleRate = 48000.0;
-    std::vector<float> fBuffer[2];
+    float* fBuffer[2] = { nullptr, nullptr }; // the loop (attach())
+    bool fPendingRecDub = false;              // Rec/Dub pressed before the memory came
     LooperState fState = LooperState::Empty;
     uint32_t fLength = 0;
     double fPosition = 0.0;

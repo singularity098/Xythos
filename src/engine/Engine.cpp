@@ -365,12 +365,37 @@ Metronome::Settings Engine::metronomeSettings() const
     return settings;
 }
 
+bool Engine::serviceLooper()
+{
+    if (fLooperMemoryReady.load(std::memory_order_acquire))
+        return true;
+    if (!fLooperWanted.load(std::memory_order_relaxed))
+        return false;
+    const std::lock_guard<std::mutex> lock(fMutex);
+    for (std::unique_ptr<float[]>& memory : fLooperMemory)
+        memory.reset(new float[kLooperMaxSamples]()); // zeroed
+    fLooperMemoryReady.store(true, std::memory_order_release);
+    return true;
+}
+
 void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t frames)
 {
+    if (!fLooperAttached && param(kParamLooperWake) >= 0.5f)
+        fLooperWanted.store(true, std::memory_order_relaxed); // the UI opened the looper
+    // the loop's memory, once serviceLooper() has made it
+    if (!fLooperAttached && fLooperMemoryReady.load(std::memory_order_acquire))
+    {
+        fLooper.attach(fLooperMemory[0].get(), fLooperMemory[1].get());
+        fLooperAttached = true;
+    }
+
     // the controls it hasn't taken yet (only changes: Tap sets the BPM inside it, which the host's value mustn't undo)
     for (int p = 0; p < kLooperParamCount; ++p)
     {
         const float value = param(looperParam(p));
+        if (!fLooperAttached && value >= 0.5f
+            && (p == kLooperParamRecDub || p == kLooperParamPlayStop || p == kLooperParamTap))
+            fLooperWanted.store(true, std::memory_order_relaxed); // a footswitch: the looper's wanted
         if (fLooperApplyAll || value != fLooperApplied[static_cast<size_t>(p)])
         {
             fLooperApplied[static_cast<size_t>(p)] = value;

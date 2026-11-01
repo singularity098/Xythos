@@ -46,8 +46,24 @@ void run(Looper& looper, uint32_t frames, float level, int* allocations = nullpt
     }
 }
 
+// The loop's memory for a test's looper
+struct Memory {
+    std::vector<float> left = std::vector<float>(kLooperMaxSamples), right = std::vector<float>(kLooperMaxSamples);
+};
+
+void giveMemory(Looper& looper)
+{
+    static Memory memory[4];
+    static int next = 0;
+    Memory& m = memory[next++ % 4];
+    std::fill(m.left.begin(), m.left.end(), 0.0f);
+    std::fill(m.right.begin(), m.right.end(), 0.0f);
+    looper.attach(m.left.data(), m.right.data());
+}
+
 void countInSetup(Looper& looper, int loops)
 {
+    giveMemory(looper);
     looper.setHasCountIn(true);
     looper.prepare(kRate);
     looper.setParam(kLooperParamMode, 0.0f);
@@ -115,6 +131,7 @@ TEST_CASE("each pass of a Count In looper loop gets a lane of its own waveform")
 TEST_CASE("a Free loop's waveform is spread over the columns when it closes")
 {
     Looper looper;
+    giveMemory(looper);
     looper.prepare(kRate);
     looper.setParam(kLooperParamLatency, 0.0f);
     press(looper, kLooperParamRecDub); // Free mode: no Count In (setHasCountIn() not called)
@@ -176,6 +193,15 @@ TEST_CASE("the global looper records what's heard and plays on through chain cha
 {
     Engine engine { testing::testRegistry() };
     engine.prepare(kRate, 256);
+    engine.setParameter(kParamLooperWake, 1.0f); // the UI opened the looper
+    {
+        std::vector<float> l(256), r(256);
+        const float* i[2] = { l.data(), r.data() };
+        float* o[2] = { l.data(), r.data() };
+        engine.process(i, o, 256); // the audio thread sees the pulse
+    }
+    engine.setParameter(kParamLooperWake, 0.0f);
+    REQUIRE(engine.serviceLooper());
     engine.setParameter(looperParam(kLooperParamMode), 1.0f); // Free
     engine.setParameter(looperParam(kLooperParamLatency), 0.0f);
     std::vector<float> inL(256), inR(256), outL(256), outR(256);
@@ -240,4 +266,42 @@ TEST_CASE("the looper's footswitches can be mapped to MIDI")
     CHECK_FALSE(isMidiMappable(kParamLooperState));
     CHECK(midiCcToValue(looperParam(kLooperParamRecDub), 127) == 1.0f);
     CHECK(midiCcToValue(looperParam(kLooperParamRecDub), 0) == 0.0f);
+}
+
+TEST_CASE("the global looper takes no memory until it's wanted, and a footswitch press wakes it")
+{
+    Engine engine { testing::testRegistry() };
+    engine.prepare(kRate, 256);
+    engine.setParameter(looperParam(kLooperParamMode), 1.0f); // Free
+    CHECK_FALSE(engine.serviceLooper()); // never opened: nothing reserved
+
+    std::vector<float> inL(256, 0.3f), inR(256, 0.3f), outL(256), outR(256);
+    const float* in[2] = { inL.data(), inR.data() };
+    float* out[2] = { outL.data(), outR.data() };
+    LooperReport report;
+
+    // a MIDI footswitch presses Rec/Dub: passed through for now, and the looper is wanted
+    engine.setParameter(looperParam(kLooperParamRecDub), 1.0f);
+    for (int b = 0; b < 4; ++b)
+    {
+        testing::AllocationGuard guard;
+        engine.process(in, out, 256);
+        CHECK(guard.count() == 0);
+    }
+    CHECK(outL[100] == doctest::Approx(0.3f).epsilon(0.01)); // the dry signal passes
+    report.decodeState(engine.getParameter(kParamLooperState));
+    CHECK(report.state == LooperState::Empty);
+
+    // the plugin's thread reserves the memory; the press that asked for it starts the recording
+    CHECK(engine.serviceLooper());
+    engine.process(in, out, 256);
+    report.decodeState(engine.getParameter(kParamLooperState));
+    CHECK(report.state == LooperState::Recording);
+
+    // the looper is ephemeral: a project reopened (the pulse long over, so saved as 0) has no memory until it's wanted
+    Engine reopened { testing::testRegistry() };
+    reopened.prepare(kRate, 256);
+    reopened.setParameter(kParamLooperWake, globalParamSpec(kParamLooperWake).def);
+    reopened.process(in, out, 256);
+    CHECK_FALSE(reopened.serviceLooper());
 }

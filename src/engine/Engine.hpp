@@ -101,6 +101,12 @@ public:
     // tuner output parameters. Call it every 20 ms or so while the tuner is on.
     void analyzeTuner();
 
+    // Non-RT, call it now and then (the plugin does from its exchange thread). Gives the looper its loop's memory
+    // (23 MB) once it's wanted in this run: the UI pulsed Looper Wake (it opened the looper), or one of its
+    // footswitches was pressed (a MIDI footswitch). Until then the looper passes audio through. Returns whether it
+    // has it.
+    bool serviceLooper();
+
     // Any thread. Whether branch B of a split runs on a second core (default on). Takes effect from the next
     // setChain() if no worker thread was started yet.
     void setParallelProcessing(bool enabled) { fParallel.store(enabled, std::memory_order_relaxed); }
@@ -234,6 +240,11 @@ private:
     Looper fLooper;
     std::array<float, kLooperParamCount> fLooperApplied {};
     bool fLooperApplyAll = true;
+    // its loop's memory, allocated by serviceLooper() and handed over through fLooperMemoryReady
+    std::unique_ptr<float[]> fLooperMemory[2];
+    std::atomic<bool> fLooperMemoryReady { false };
+    std::atomic<bool> fLooperWanted { false }; // a footswitch was pressed before the memory came
+    bool fLooperAttached = false;              // audio thread
     Meter fInMeters[2], fOutMeters[2];
 
     std::vector<float> fWork[2], fDry[2], fScratch[2];

@@ -318,6 +318,8 @@ private:
         while (!fStopExchange)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            // the looper's memory, the first time it's wanted (not reserved in instances that never use it)
+            fEngine.serviceLooper();
             // at most once a second, in case a block keeps breaking
             const auto now = std::chrono::steady_clock::now();
             if (now - lastRebuild >= std::chrono::seconds(1) && fEngine.takeChainFault())
