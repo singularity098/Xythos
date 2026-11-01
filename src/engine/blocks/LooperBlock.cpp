@@ -24,11 +24,10 @@ class LooperBlock : public Block {
 public:
     void prepare(double sampleRate, uint32_t /*maxFrames*/) override
     {
-        // the block has its loop's memory from the start, as it always did
-        for (std::vector<float>& buffer : fMemory)
-            if (buffer.size() != kLooperMaxSamples)
-                buffer.assign(kLooperMaxSamples, 0.0f);
-        fLooper.attach(fMemory[0].data(), fMemory[1].data());
+        // the block has its loop's memory from the start, as it always did: one lane, a minute long (nothing
+        // services it later, so its overdubs all go into that lane, as they always did)
+        fMemory.service();
+        fLooper.attach(&fMemory);
         fLooper.prepare(sampleRate);
     }
 
@@ -48,7 +47,7 @@ public:
     void reset() override { fLooper.reset(); }
 
 private:
-    std::vector<float> fMemory[2];
+    LooperMemory fMemory;
     Looper fLooper;
     float* fClick = nullptr;
 };

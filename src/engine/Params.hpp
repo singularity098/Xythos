@@ -135,6 +135,11 @@ enum LaterParam : uint32_t {
     // wrote it, counter * 2 if there was nothing to write)
     kParamLooperExport,
     kParamLooperExported,
+    // the looper page's edits (owner, 2026-11-01), hidden, each a request the DSP acts on when it changes (a
+    // counter, so the same request twice still is one): Looper Delete deletes a pass (counter * 8 + its lane, from 0);
+    // Looper Start sets where Play starts the loop (counter * 1001 + where, 0..1000 of the way round)
+    kParamLooperDelete,
+    kParamLooperStart,
 
     kParamCount
 };

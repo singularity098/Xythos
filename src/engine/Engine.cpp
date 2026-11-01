@@ -369,13 +369,9 @@ Metronome::Settings Engine::metronomeSettings() const
 
 bool Engine::serviceLooper()
 {
-    if (fLooperMemoryReady.load(std::memory_order_acquire))
-        return true;
-    if (!fLooperWanted.load(std::memory_order_relaxed))
+    if (!fLooperMemoryReady.load(std::memory_order_acquire) && !fLooperWanted.load(std::memory_order_relaxed))
         return false;
-    const std::lock_guard<std::mutex> lock(fMutex);
-    for (std::unique_ptr<float[]>& memory : fLooperMemory)
-        memory.reset(new float[kLooperMaxSamples]()); // zeroed
+    fLooperMemory.service();
     fLooperMemoryReady.store(true, std::memory_order_release);
     return true;
 }
@@ -388,7 +384,10 @@ std::string Engine::looperWav() const
     const uint32_t length = fLooperLength.load(std::memory_order_relaxed);
     if ((state != LooperState::Playing && state != LooperState::Stopped) || length == 0)
         return {};
-    return encodeWav(fLooperMemory[0].get(), fLooperMemory[1].get(), length, static_cast<uint32_t>(fSampleRate), true);
+    // the passes, summed
+    std::vector<float> left, right;
+    fLooperMemory.mixdown(length, left, right);
+    return encodeWav(left.data(), right.data(), length, static_cast<uint32_t>(fSampleRate), true);
 }
 
 void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t frames)
@@ -398,7 +397,7 @@ void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t f
     // the loop's memory, once serviceLooper() has made it
     if (!fLooperAttached && fLooperMemoryReady.load(std::memory_order_acquire))
     {
-        fLooper.attach(fLooperMemory[0].get(), fLooperMemory[1].get());
+        fLooper.attach(&fLooperMemory);
         fLooperAttached = true;
     }
 
@@ -415,6 +414,14 @@ void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t f
             fLooper.setParam(p, value);
         }
     }
+    // the page's requests: a pass to delete, where Play starts (only changes, and not what a project restored)
+    const float deleteRequest = param(kParamLooperDelete), startRequest = param(kParamLooperStart);
+    if (!fLooperApplyAll && deleteRequest != fLooperDeleteSeen)
+        fLooper.deletePass(static_cast<int>(std::lround(deleteRequest)) % 8);
+    if (!fLooperApplyAll && startRequest != fLooperStartSeen)
+        fLooper.setStart(static_cast<float>(std::lround(startRequest) % 1001) / 1000.0f);
+    fLooperDeleteSeen = deleteRequest;
+    fLooperStartSeen = startRequest;
     fLooperApplyAll = false;
 
     // a loop recorded in stereo plays in stereo whatever the chain is now

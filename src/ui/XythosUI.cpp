@@ -205,6 +205,8 @@ enum class Hit {
     MetroPanel,   // open/close the metronome panel
     LooperPanel,  // open/close the looper page
     LooperSave,   // save the loop to a file; index 0 WAV, 1 FLAC
+    LooperSeek,   // the looper's timeline: a click sets where Play starts the loop; a right-click puts it back
+    LooperDeletePass, // index = the pass's lane: delete it (a second click confirms)
     MetroAccent,  // index = beat: cycle accent / normal / soft / mute
     MetroGrouping, // next beat grouping
     MetroResetAccents,
@@ -324,8 +326,28 @@ enum Field {
     kFieldPresetName,   // Save Preset dialog
     kFieldPresetFolder,
     kFieldInkHex,       // the colour picker's hex value
+    // the looper page's numbers (owner, 2026-11-01: typed as well as stepped)
+    kFieldLooperBpm,
+    kFieldLooperBeats,
+    kFieldLooperBars,
+    kFieldLooperCountIn,
+    kFieldLooperPasses,
     kFieldCount
 };
+
+// The looper control a looper number field edits (a LooperParam), or -1
+constexpr int looperFieldParam(int field)
+{
+    switch (field)
+    {
+    case kFieldLooperBpm:     return kLooperParamBpm;
+    case kFieldLooperBeats:   return kLooperParamBeats;
+    case kFieldLooperBars:    return kLooperParamMeasures;
+    case kFieldLooperCountIn: return kLooperParamCountIn;
+    case kFieldLooperPasses:  return kLooperParamLoops;
+    default:                  return -1;
+    }
+}
 
 // Which built-in photos the Cab Image dialog picks from: cabs (IR blocks), generic pedals (NAM pedal captures), amp
 // heads (NAM amps)
@@ -936,6 +958,8 @@ protected:
         // a Delete waiting for its second click is called off by any other click
         if (!(hit && hit->kind == Hit::PresetDelete))
             fPresetDeleteArmed.clear();
+        if (!(hit && hit->kind == Hit::LooperDeletePass))
+            fLooperDeleteArmed = -1;
 
         if (hit == nullptr)
             return false;
@@ -1547,6 +1571,23 @@ protected:
             return true;
         }
 
+        case Hit::LooperSeek:
+            setLooperStart(std::clamp((x - hit->rect.x) / hit->rect.w, 0.0f, 1.0f));
+            return true;
+
+        case Hit::LooperDeletePass:
+            // the first click asks, the second (within a few seconds) deletes
+            if (fLooperDeleteArmed != hit->index
+                || std::chrono::steady_clock::now() - fLooperDeleteArmedAt > std::chrono::seconds(4))
+            {
+                fLooperDeleteArmed = hit->index;
+                fLooperDeleteArmedAt = std::chrono::steady_clock::now();
+                repaint();
+                return true;
+            }
+            deleteLooperPass(hit->index);
+            return true;
+
         case Hit::LooperPanel:
             // the looper page takes the chain's place, as the tuner and the metronome do: one of them at a time
             fLooperPanel = !fLooperPanel;
@@ -2110,6 +2151,8 @@ private:
         {
             const GlobalParamSpec& spec = globalParamSpec(index);
             value = spec.min + n * (spec.max - spec.min);
+            if (index == looperParam(kLooperParamBpm))
+                value = std::round(value); // the looper's tempo is whole BPM (its slider too)
         }
         watchLooperTap(index, value);
         if (gesture)
@@ -3016,6 +3059,12 @@ private:
         const HitArea* hit = hitAt(x, y);
         if (hit == nullptr)
             return false;
+        // the looper's timeline: Play starts the loop from its start again
+        if (hit->kind == Hit::LooperSeek)
+        {
+            setLooperStart(0.0f);
+            return true;
+        }
         // an IR in Add Block's list: pick its cab image; a NAM pedal: its pedal image
         if (fDialog == Dialog::AddBlock && hit->kind == Hit::ListRow && hit->index < static_cast<int>(fRows.size())
             && fRows[hit->index].entry != nullptr)
@@ -3485,6 +3534,16 @@ private:
             if (text != (nam ? fSettings.namDir : fSettings.irDir))
                 updateSettings([&](Settings& settings) { (nam ? settings.namDir : settings.irDir) = text; });
             fFields[field] = shortenHomePath(text);
+        }
+        else if (const int param = looperFieldParam(field); param >= 0)
+        {
+            // a number sets the control (clamped to its range); anything else leaves it as it was
+            const std::string& text = fFields[field];
+            char* end = nullptr;
+            const double value = std::strtod(text.c_str(), &end);
+            if (end != text.c_str() && std::isfinite(value))
+                setValue(looperParam(param), static_cast<float>(std::round(value)));
+            fFields[field] = std::to_string(looperInt(param));
         }
         else if (field == kFieldInkHex)
         {
@@ -5207,6 +5266,16 @@ private:
                            "half the size of a WAV. Use it to keep an idea, or to take it into your DAW."
                          : "Saves the loop, all its passes as you hear them, to a 24-bit WAV file, which any DAW or "
                            "audio program opens. Use it to keep an idea, or to take it into your DAW." };
+        case Hit::LooperSeek:
+            return { "Loop Start",
+                     "Click the timeline to set where Play starts the loop next time, marked with a flag; it doesn't "
+                     "jump while the loop plays. Right-click it, or click at the very start, to start from the "
+                     "beginning again. Clearing the loop puts it back at the start." };
+        case Hit::LooperDeletePass:
+            return { "Delete Pass " + std::to_string(hit.index + 1),
+                     "Deletes this pass from the loop, keeping the others; the passes after it move up. Click once, "
+                     "then click Delete? to confirm. There's no undo. A pass that's being recorded can't be deleted, "
+                     "and deleting the only pass left clears the loop." };
         case Hit::LooperPanel:
             return { "Looper",
                      "Opens the looper in place of the chain. It records what you hear, after the whole rig, and "
@@ -6531,6 +6600,7 @@ private:
         case LooperState::Overdubbing: return theme::warn;
         case LooperState::Playing: return theme::good;
         case LooperState::CountIn: return theme::accent;
+        case LooperState::DubCountIn: return theme::accent;
         case LooperState::Empty:
         case LooperState::Stopped: break;
         }
@@ -6547,8 +6617,13 @@ private:
             if (report.generation != fLooperGeneration)
             {
                 fLooperGeneration = report.generation;
-                for (auto& lane : fLooperWave)
-                    std::fill(std::begin(lane), std::end(lane), uint8_t { 0 });
+                // a pass this UI deleted: its copy already moved the lanes up; any other new generation (Clear)
+                // starts empty
+                if (std::chrono::steady_clock::now() < fLooperKeepWaveUntil)
+                    fLooperKeepWaveUntil = {};
+                else
+                    for (auto& lane : fLooperWave)
+                        std::fill(std::begin(lane), std::end(lane), uint8_t { 0 });
             }
             return;
         }
@@ -6608,6 +6683,34 @@ private:
                   + shortenHomePath(fLooperSavePath) + ".");
     }
 
+    // Where Play starts the loop, 0..1 of the way round (Looper Start: counter * 1001 + where in 0..1000)
+    void setLooperStart(float fraction)
+    {
+        if (fraction < 0.01f)
+            fraction = 0.0f; // a click at the very start means the start
+        const int where = static_cast<int>(std::lround(fraction * 1000.0f));
+        const long counter = std::lround(fParams[kParamLooperStart]) / 1001 % 3999 + 1;
+        setValue(kParamLooperStart, static_cast<float>(counter * 1001 + where));
+        fLooperStart = where / 1000.0f;
+        repaint();
+    }
+
+    // Deletes a pass (Looper Delete: counter * 8 + its lane); the waveform's copy moves the lanes after it up now,
+    // and keeps them when the DSP's new generation comes
+    void deleteLooperPass(int lane)
+    {
+        fLooperDeleteArmed = -1;
+        if (lane < 0 || lane >= kLooperWaveLanes)
+            return;
+        const long counter = std::lround(fParams[kParamLooperDelete]) / 8 % 8000 + 1;
+        setValue(kParamLooperDelete, static_cast<float>(counter * 8 + lane));
+        for (int l = lane; l + 1 < kLooperWaveLanes; ++l)
+            std::copy(std::begin(fLooperWave[l + 1]), std::end(fLooperWave[l + 1]), std::begin(fLooperWave[l]));
+        std::fill(std::begin(fLooperWave[kLooperWaveLanes - 1]), std::end(fLooperWave[kLooperWaveLanes - 1]), uint8_t { 0 });
+        fLooperKeepWaveUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+        repaint();
+    }
+
     float looperValue(int param) const { return fParams[looperParam(param)]; }
     int looperInt(int param) const { return static_cast<int>(std::lround(looperValue(param))); }
 
@@ -6637,7 +6740,8 @@ private:
         else if (param == kLooperParamPlayStop)
         {
             const LooperState state = looperReport().state;
-            if (state == LooperState::Playing || state == LooperState::Overdubbing || state == LooperState::Recording)
+            if (state == LooperState::Playing || state == LooperState::Overdubbing || state == LooperState::Recording
+                || state == LooperState::DubCountIn)
                 rect(cx - 7.0f, cy - 7.0f, 14.0f, 14.0f); // what a press does: stop
             else
             {
@@ -6661,17 +6765,25 @@ private:
         fHits.push_back({ r, Hit::Momentary, static_cast<int>(looperParam(param)) });
     }
 
-    // A whole-number setting as "−  4  +" under its name; dragging the number changes it too. Returns its width.
-    float drawLooperStepper(float x, float y, int param, const char* name, float width = 92.0f)
+    // A whole-number setting as "−  4  +" under its name; the number is a text field to type it in (owner,
+    // 2026-11-01). Returns its width.
+    float drawLooperStepper(float x, float y, int param, Field field, const char* name, float width = 96.0f)
     {
         const uint32_t index = looperParam(param);
         label(x, y, name, theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
         const float by = y + 12.0f, bh = 28.0f;
         drawValueButton({ x, by, 26.0f, bh }, "−", false, Hit::Step, index, -1.0f);
         drawValueButton({ x + width - 26.0f, by, 26.0f, bh }, "+", false, Hit::Step, index, 1.0f);
-        label(x + width / 2, by + bh / 2, valueText(index).c_str(), theme::text, 13.0f, ALIGN_CENTER | ALIGN_MIDDLE);
-        fHits.push_back({ { x + 28.0f, by, width - 56.0f, bh }, Hit::Knob, static_cast<int>(index) });
+        drawLooperNumber({ x + 28.0f, by, width - 56.0f, bh }, param, field);
         return width;
+    }
+
+    // A looper setting's number, in a text field: click it and type; Enter, Tab or a click elsewhere sets it
+    void drawLooperNumber(const Rect& r, int param, Field field)
+    {
+        if (fFocusedField != field)
+            fFields[field] = std::to_string(looperInt(param));
+        drawTextField(r, field, "");
     }
 
     // "1:07.3"
@@ -6726,10 +6838,10 @@ private:
         }
         const float ty = panel.y + 44.0f, th = 64.0f;
         const bool recording = state == LooperState::Recording || state == LooperState::Overdubbing
-                            || state == LooperState::CountIn;
+                            || state == LooperState::CountIn || state == LooperState::DubCountIn;
         drawLooperSwitch({ px, ty, 112.0f, th }, kLooperParamRecDub, "Rec / Dub", recording, stateColor);
         const bool running = state == LooperState::Playing || state == LooperState::Overdubbing
-                          || state == LooperState::Recording;
+                          || state == LooperState::Recording || state == LooperState::DubCountIn;
         drawLooperSwitch({ px + 120.0f, ty, 112.0f, th }, kLooperParamPlayStop, running ? "Stop" : "Play", false,
                          theme::good);
         drawLooperSwitch({ px + 240.0f, ty, 96.0f, th }, kLooperParamClear, "Clear", false, theme::text);
@@ -6739,6 +6851,7 @@ private:
                               : state == LooperState::Playing     ? "PLAYING"
                               : state == LooperState::Stopped     ? "STOPPED"
                               : state == LooperState::CountIn     ? "COUNTING IN"
+                              : state == LooperState::DubCountIn  ? "COUNTING IN"
                                                                   : "READY";
         const float sx = px + 360.0f;
         label(sx, ty + 20.0f, stateName, stateColor, 22.0f, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -6750,6 +6863,12 @@ private:
         const int beat = std::clamp(static_cast<int>(beatsIn) % beats + 1, 1, beats);
         if (state == LooperState::CountIn)
             std::snprintf(buf, sizeof(buf), "Click %d of %d", report.count, countIn);
+        else if (state == LooperState::DubCountIn && report.count == 0)
+            std::snprintf(buf, sizeof(buf), "Pass %d starts when the loop comes round; the clicks lead in to it",
+                          report.lanes + 1);
+        else if (state == LooperState::DubCountIn)
+            std::snprintf(buf, sizeof(buf), "Click %d of %d  ·  then pass %d", report.count, countIn,
+                          report.lanes + 1);
         else if (state == LooperState::Recording && !grid)
             std::snprintf(buf, sizeof(buf), "Pass 1  ·  %s", looperTime(report.seconds).c_str());
         else if ((state == LooperState::Recording || state == LooperState::Overdubbing) && grid)
@@ -6788,9 +6907,9 @@ private:
             }
         }
 
-        // --- the settings, at the bottom: how the loop is made, and how it plays back
+        // --- the settings, at the bottom: how the loop is made, its tempo, and how it plays back
         constexpr float rowH = 56.0f;
-        const float settingsTop = panel.y + panel.h - 2 * rowH + 6.0f;
+        const float settingsTop = panel.y + panel.h - 3 * rowH + 6.0f;
         beginPath();
         moveTo(px, settingsTop - 12.0f);
         lineTo(right, settingsTop - 12.0f);
@@ -6818,10 +6937,11 @@ private:
             {
                 const float cx = box.x + 16.0f + (k % perRow) * 20.0f;
                 const float cy = box.y + box.h / 2 - (rows - 1) * dy / 2 + (k / perRow) * dy;
-                const bool lit = state == LooperState::CountIn ? k < report.count : state != LooperState::Empty;
+                const bool counting = state == LooperState::CountIn || state == LooperState::DubCountIn;
+                const bool lit = counting ? k < report.count : state != LooperState::Empty;
                 beginPath();
                 circle(cx, cy, k % beats == 0 ? 4.5f : 3.5f);
-                fillColor(lit ? (state == LooperState::CountIn && k == report.count - 1 ? theme::accent
+                fillColor(lit ? (counting && k == report.count - 1 ? theme::accent
                                                                                          : theme::accent.withAlpha(0.45f))
                               : Color(1.0f, 1.0f, 1.0f, 0.12f));
                 fill();
@@ -6871,17 +6991,28 @@ private:
 
         // what's been played round the loop so far, tinted, and the playhead
         const bool moving = state == LooperState::Playing || state == LooperState::Overdubbing
-                         || (state == LooperState::Recording && grid) || state == LooperState::Stopped;
+                         || (state == LooperState::Recording && grid) || state == LooperState::Stopped
+                         || state == LooperState::DubCountIn;
+        // the start marker: where Play starts the loop (a click on the timeline sets it, a right-click puts it back
+        // at the start; owner, 2026-11-01). It goes back to the start with the loop.
+        const bool hasLoop = state != LooperState::Empty && state != LooperState::CountIn
+                          && state != LooperState::Recording;
+        if (!hasLoop)
+            fLooperStart = 0.0f;
+        else
+            fHits.push_back({ tl, Hit::LooperSeek, 0 });
         const float headX = tl.x + tl.w * std::clamp(report.position, 0.0f, 1.0f);
         if (moving && state != LooperState::Stopped)
             fillRect(tl.x, tl.y, headX - tl.x, tl.h, stateColor.withAlpha(0.08f), 6.0f);
 
         // the lanes: a pass each (as many as Count In will record, or as the loop has)
         int lanes = std::max(report.lanes, report.pass);
-        if (countInMode && state != LooperState::Empty)
-            lanes = std::max(lanes, loops);
+        if (countInMode && state == LooperState::Recording)
+            lanes = std::max(lanes, loops); // the passes the first recording goes on to
         if (state == LooperState::Empty || state == LooperState::CountIn)
             lanes = countInMode ? loops : 1;
+        if (state == LooperState::DubCountIn)
+            lanes = report.lanes + loops; // the passes the count-in leads to
         lanes = std::clamp(lanes, 1, kLooperWaveLanes);
         const float laneH = (tl.h - 8.0f) / lanes;
         const float colW = tl.w / kLooperWaveColumns;
@@ -6918,12 +7049,58 @@ private:
                 lineCap(BUTT);
                 strokeWidth(1.0f);
             }
+            else if (laneH >= 24.0f && state == LooperState::DubCountIn && lane >= report.lanes)
+            {
+                label(tl.x + 70.0f, mid, "Records after the count-in", theme::textFaint, 12.0f,
+                      ALIGN_LEFT | ALIGN_MIDDLE);
+            }
             else if (laneH >= 24.0f && state != LooperState::Empty && !(state == LooperState::Recording && lane == 0))
             {
-                std::snprintf(buf, sizeof(buf), lane == 0 ? "Recording" : "Starts when pass %d comes round", lane);
+                if (live)
+                    std::snprintf(buf, sizeof(buf), "Recording");
+                else if (lane < report.lanes)
+                    std::snprintf(buf, sizeof(buf), "Silent");
+                else
+                    std::snprintf(buf, sizeof(buf), "Starts when pass %d comes round", lane);
                 label(tl.x + 70.0f, mid, buf, theme::textFaint, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
             }
+
+            // delete the pass (owner, 2026-11-01): any pass but one being recorded; the first click asks
+            if (hasLoop && lane < report.lanes && !(state == LooperState::Overdubbing && live))
+            {
+                const bool armed = fLooperDeleteArmed == lane;
+                const float bh = std::min(20.0f, laneH - 4.0f), bw = armed ? 64.0f : bh;
+                const Rect del { tl.x + tl.w - bw - 6.0f, ly + std::max(2.0f, (laneH - bh) / 2 - 2.0f), bw, bh };
+                const bool hover = del.contains(fMouseX, fMouseY);
+                fillRect(del.x, del.y, del.w, del.h, armed ? theme::bad.withAlpha(0.25f)
+                                                     : Color(0.0f, 0.0f, 0.0f, hover ? 0.8f : 0.5f), 4.0f);
+                beginPath();
+                roundedRect(del.x + 0.5f, del.y + 0.5f, del.w - 1.0f, del.h - 1.0f, 4.0f);
+                strokeColor(armed ? theme::bad : hover ? theme::text : theme::border);
+                strokeWidth(1.0f);
+                stroke();
+                if (armed)
+                    label(del.x + del.w / 2, del.y + del.h / 2, "Delete?", theme::text, 11.0f,
+                          ALIGN_CENTER | ALIGN_MIDDLE);
+                else
+                {
+                    const float c = del.x + del.w / 2, m = del.y + del.h / 2, arm = std::min(4.0f, bh / 4);
+                    beginPath();
+                    moveTo(c - arm, m - arm);
+                    lineTo(c + arm, m + arm);
+                    moveTo(c + arm, m - arm);
+                    lineTo(c - arm, m + arm);
+                    strokeColor(hover ? theme::text : theme::textDim);
+                    strokeWidth(1.4f);
+                    stroke();
+                    strokeWidth(1.0f);
+                }
+                fHits.push_back({ del, Hit::LooperDeletePass, lane });
+            }
         }
+        if (fLooperDeleteArmed >= 0
+            && std::chrono::steady_clock::now() - fLooperDeleteArmedAt > std::chrono::seconds(4))
+            fLooperDeleteArmed = -1;
         // a free recording's length isn't known yet, so its waveform comes when the loop closes
         if (state == LooperState::Recording && !grid)
         {
@@ -6941,6 +7118,26 @@ private:
                 std::snprintf(buf, sizeof(buf), "Press Rec / Dub to record, and again to close the loop");
             label(tl.x + tl.w / 2, tl.y + tl.h / 2, buf, theme::textDim, 13.0f, ALIGN_CENTER | ALIGN_MIDDLE);
         }
+        if (hasLoop)
+        {
+            // the start marker: a line and a flag on top
+            const float mx = tl.x + tl.w * fLooperStart;
+            beginPath();
+            moveTo(mx, tl.y);
+            lineTo(mx, tl.y + tl.h);
+            strokeColor(theme::text.withAlpha(fLooperStart > 0.0f ? 0.55f : 0.25f));
+            strokeWidth(1.0f);
+            stroke();
+            beginPath();
+            moveTo(mx, tl.y);
+            lineTo(mx + 9.0f, tl.y);
+            lineTo(mx, tl.y + 9.0f);
+            closePath();
+            fillColor(theme::text.withAlpha(fLooperStart > 0.0f ? 0.9f : 0.4f));
+            fill();
+            if (fLooperStart > 0.0f)
+                label(mx + 12.0f, tl.y + 6.0f, "Start", theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        }
         if (moving)
         {
             beginPath();
@@ -6953,8 +7150,9 @@ private:
         }
     }
 
-    // The looper's settings in two rows: how the loop is made (the Count In ones are dim in Free mode), and how it
-    // plays back
+    // The looper's settings in three rows: how the loop is made and its tempo (the Count In ones, dim in Free mode),
+    // and how it plays back. Numbers can be typed (owner, 2026-11-01), and the tempo has a slider with -5, -1, +1
+    // and +5 beside it.
     void drawLooperSettings(float x, float y, float right, bool countInMode)
     {
         label(x, y + 2.0f, "Make the loop", theme::accent, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -6965,24 +7163,51 @@ private:
         drawValueButton({ cx + 82.0f, row + 12.0f, 60.0f, 28.0f }, "Free", !countInMode, Hit::SetValue,
                         looperParam(kLooperParamMode), 1.0f);
         cx += 158.0f;
-        if (!countInMode)
-            globalAlpha(0.45f);
-        cx += drawLooperStepper(cx, row, kLooperParamBpm, "Tempo (BPM)", 104.0f) + 6.0f;
-        drawButton({ cx, row + 12.0f, 50.0f, 28.0f }, "Tap", false, theme::accent, Hit::Momentary,
-                   static_cast<int>(looperParam(kLooperParamTap)));
-        cx += 62.0f;
-        const std::pair<int, const char*> steppers[] = {
-            { kLooperParamBeats, "Beats" }, { kLooperParamMeasures, "Bars" },
-            { kLooperParamCountIn, "Count-in" }, { kLooperParamLoops, "Passes" } };
-        for (const auto& [param, name] : steppers)
+        const float dim = countInMode ? 1.0f : 0.45f;
+        globalAlpha(dim);
+        const struct {
+            int param;
+            Field field;
+            const char* name;
+        } steppers[] = { { kLooperParamBeats, kFieldLooperBeats, "Beats" },
+                         { kLooperParamMeasures, kFieldLooperBars, "Bars" },
+                         { kLooperParamCountIn, kFieldLooperCountIn, "Count-in" },
+                         { kLooperParamLoops, kFieldLooperPasses, "Passes" } };
+        for (const auto& stepper : steppers)
         {
-            if (cx + 84.0f > right)
+            if (cx + 96.0f > right)
                 break;
-            cx += drawLooperStepper(cx, row, param, name, 84.0f) + 8.0f;
+            cx += drawLooperStepper(cx, row, stepper.param, stepper.field, stepper.name) + 10.0f;
         }
         globalAlpha(1.0f);
 
-        const float y2 = y + 56.0f;
+        // the tempo: −5 −1 [slider] +1 +5, the number, Tap
+        const float yt = y + 56.0f;
+        const uint32_t bpm = looperParam(kLooperParamBpm);
+        const float by = yt + 2.0f, bh = 28.0f;
+        label(x, by + bh / 2, "Tempo", theme::accent, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        cx = x + 108.0f;
+        globalAlpha(dim);
+        drawValueButton({ cx, by, 36.0f, bh }, "−5", false, Hit::Step, bpm, -5.0f);
+        drawValueButton({ cx + 40.0f, by, 36.0f, bh }, "−1", false, Hit::Step, bpm, -1.0f);
+        cx += 86.0f;
+        const float tail = 76.0f + 10.0f + 52.0f + 40.0f + 56.0f; // the buttons, the number, "BPM" and Tap after it
+        const float sliderW = std::clamp(right - cx - tail, 80.0f, 420.0f);
+        drawSlider({ cx, by, sliderW, bh }, bpm);
+        globalAlpha(dim); // (the slider puts it back to 1)
+        cx += sliderW + 10.0f;
+        drawValueButton({ cx, by, 36.0f, bh }, "+1", false, Hit::Step, bpm, 1.0f);
+        drawValueButton({ cx + 40.0f, by, 36.0f, bh }, "+5", false, Hit::Step, bpm, 5.0f);
+        cx += 86.0f;
+        drawLooperNumber({ cx, by, 52.0f, bh }, kLooperParamBpm, kFieldLooperBpm);
+        label(cx + 58.0f, by + bh / 2, "BPM", theme::textDim, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        cx += 94.0f;
+        if (cx + 50.0f <= right)
+            drawButton({ cx, by, 50.0f, bh }, "Tap", false, theme::accent, Hit::Momentary,
+                       static_cast<int>(looperParam(kLooperParamTap)));
+        globalAlpha(1.0f);
+
+        const float y2 = y + 112.0f;
         label(x, y2 + 2.0f, "Play it back", theme::accent, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
         cx = x + 108.0f;
         const float knobY = y2 + 12.0f;
@@ -10072,6 +10297,9 @@ private:
     // fLooperGeneration (-1 before the state arrives)
     uint8_t fLooperWave[kLooperWaveLanes][kLooperWaveColumns] {};
     int fLooperGeneration = -1;
+    float fLooperStart = 0.0f;  // where Play starts the loop, as this UI set it (the start once the loop's gone)
+    int fLooperDeleteArmed = -1; // the pass whose × asks "Delete?", waiting for its second click
+    std::chrono::steady_clock::time_point fLooperDeleteArmedAt, fLooperKeepWaveUntil;
     std::chrono::steady_clock::time_point fTapAt, fBeatAt;
 
     // tuner display

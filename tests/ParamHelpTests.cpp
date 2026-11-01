@@ -56,7 +56,7 @@ TEST_CASE("every global control has help")
         if (spec.flags & kParamFlagOutput)
             continue;
         if (index == kParamChainRevision || index == kParamMidiLearn || index == kParamLooperWake
-            || index == kParamLooperExport)
+            || index == kParamLooperExport || index == kParamLooperDelete || index == kParamLooperStart)
             continue;
         const char* help = globalParamHelp(index);
         CAPTURE(std::string(spec.name));

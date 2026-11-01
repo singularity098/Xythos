@@ -102,9 +102,10 @@ public:
     void analyzeTuner();
 
     // Non-RT, call it now and then (the plugin does from its exchange thread). Gives the looper its loop's memory
-    // (23 MB) once it's wanted in this run: the UI pulsed Looper Wake (it opened the looper), or one of its
-    // footswitches was pressed (a MIDI footswitch). Until then the looper passes audio through. Returns whether it
-    // has it.
+    // once it's wanted in this run: the UI pulsed Looper Wake (it opened the looper), or one of its footswitches was
+    // pressed (a MIDI footswitch). Until then the looper passes audio through. From then on it keeps a lane ready for
+    // the next pass (LooperMemory::service(): 23 MB for a first recording, the loop's length for each pass after it)
+    // and zeroes the passes deleted. Returns whether it has the memory.
     bool serviceLooper();
 
     // Non-RT. The loop as a float WAV (encodeWav()), or "" if there's none to save: no memory, empty, or being
@@ -244,9 +245,10 @@ private:
     Looper fLooper;
     std::array<float, kLooperParamCount> fLooperApplied {};
     bool fLooperApplyAll = true;
-    // its loop's memory, allocated by serviceLooper() and handed over through fLooperMemoryReady
-    std::unique_ptr<float[]> fLooperMemory[2];
+    // its loop's memory, kept by serviceLooper() and handed over through fLooperMemoryReady
+    LooperMemory fLooperMemory;
     std::atomic<bool> fLooperMemoryReady { false };
+    float fLooperDeleteSeen = 0.0f, fLooperStartSeen = 0.0f; // the page's last requests (audio thread)
     std::atomic<bool> fLooperWanted { false }; // a footswitch was pressed before the memory came
     bool fLooperAttached = false;              // audio thread
     std::atomic<uint32_t> fLooperLength { 0 }; // the loop's length and state, for looperWav()

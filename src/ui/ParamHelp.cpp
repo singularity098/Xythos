@@ -2402,10 +2402,13 @@ constexpr GlobalHelp kGlobalHelp[] = {
     { "looper_rec",
       "Press to record. Press again to close the loop and play it back. While it plays, press to overdub another "
       "pass, and again to go back to just playing. In Count In mode the first press starts the count-in (press again "
-      "to call it off), and the loop closes by itself after the bars you set. Map a footswitch to it with MIDI learn: "
-      "right-click the button." },
+      "to call it off), and the loop closes by itself after the bars you set. Over a loop, a press in Count In mode "
+      "counts you in the same way to a new pass: while it plays, the clicks lead up to the loop's start; stopped, "
+      "the loop starts with the pass. It records the Passes you set, then plays on. Map a footswitch to it with MIDI "
+      "learn: right-click the button." },
     { "looper_play",
-      "Stops the loop, or starts it again from the beginning. While recording, it closes the loop and plays it." },
+      "Stops the loop, or starts it again from the beginning, or from where you clicked on the timeline. While "
+      "recording, it closes the loop and plays it." },
     { "looper_clear",
       "Erases the loop and its passes, so you can record a new one. There's no undo for this, so be sure you're "
       "done with the loop." },
@@ -2425,7 +2428,8 @@ constexpr GlobalHelp kGlobalHelp[] = {
       "stops when you press it again, with no click." },
     { "looper_bpm",
       "The count-in click's tempo, in beats per minute. It sets how long the loop is: Bars bars of Beats beats at "
-      "this tempo. Set it before pressing Rec/Dub, or tap it with Tap." },
+      "this tempo. Drag the slider, step it with the -5, -1, +1 and +5 buttons, type it in the box, or tap it with "
+      "Tap. Set it before pressing Rec/Dub." },
     { "looper_beats", "Beats to the bar for the count-in click (4 for 4/4, 3 for a waltz). The first beat of each bar clicks higher." },
     { "looper_count_in",
       "How many clicks count you in before recording starts. 8 gives you two bars of 4/4 to get ready; 4 one bar; 0 "
@@ -2435,7 +2439,8 @@ constexpr GlobalHelp kGlobalHelp[] = {
       "don't need to hit the button on the beat." },
     { "looper_loops",
       "How many passes Count In mode records: the first, then overdubs on top of it, each in its own lane on the "
-      "timeline, with the click going on until the last one is done." },
+      "timeline, with the click going on until the last one is done. A count-in to more passes over a loop records "
+      "this many too." },
     { "looper_click",
       "The volume of the count-in click, up to 200%. 100% is as loud as the metronome's default. The click is only "
       "heard, never recorded into the loop." },
