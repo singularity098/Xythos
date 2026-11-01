@@ -24,7 +24,7 @@ bool continuation(const std::string& text, size_t pos)
     return pos > 0 && pos < text.size() && (static_cast<unsigned char>(text[pos]) & 0xc0) == 0x80;
 }
 
-// Well-formed UTF-8 (lead bytes followed by the right number of continuation bytes; overlongs aren't checked)
+// Well-formed UTF-8: no stray or missing continuation bytes, overlong forms, surrogates or code points past U+10FFFF
 bool validUtf8(const std::string& text)
 {
     for (size_t i = 0; i < text.size();)
@@ -38,6 +38,10 @@ bool validUtf8(const std::string& text)
             if (!continuation(text, i + k))
                 return false;
         }
+        const auto c1 = static_cast<unsigned char>(text[i + (n > 1 ? 1 : 0)]);
+        if ((n == 2 && c < 0xc2) || (n == 3 && c == 0xe0 && c1 < 0xa0) || (n == 3 && c == 0xed && c1 >= 0xa0) ||
+            (n == 4 && c == 0xf0 && c1 < 0x90) || (n == 4 && (c > 0xf4 || (c == 0xf4 && c1 >= 0x90))))
+            return false; // overlong, surrogate or past U+10FFFF
         i += n;
     }
     return true;
@@ -52,12 +56,20 @@ XYTHOS_FUZZ_TARGET(text_edit)
     fuzz::Input in(data, size);
     TextEdit edit;
     edit.setText(in.text(32));
+    // boundaries are only defined while every text the field was given was valid UTF-8 (strict: deleting part of
+    // invalid text can leave bytes that look like one character, such as an overlong form)
+    bool valid = validUtf8(edit.text);
     while (!in.empty())
     {
         const bool word = in.flag(), extend = in.flag();
         switch (in.range(0, 12))
         {
-        case 0: edit.insert(in.text(8)); break;
+        case 0: {
+            const std::string typed = in.text(8);
+            valid = valid && validUtf8(typed);
+            edit.insert(typed);
+            break;
+        }
         case 1: edit.moveLeft(word, extend); break;
         case 2: edit.moveRight(word, extend); break;
         case 3: edit.moveHome(extend); break;
@@ -72,11 +84,12 @@ XYTHOS_FUZZ_TARGET(text_edit)
         case 12:
             // the UI changed the text directly, then clamps
             edit.text = in.text(16);
+            valid = validUtf8(edit.text);
             edit.clamp();
             break;
         }
         FUZZ_CHECK(edit.cursor <= edit.text.size() && edit.anchor <= edit.text.size());
-        if (validUtf8(edit.text))
+        if (valid)
             FUZZ_CHECK(!continuation(edit.text, edit.cursor) && !continuation(edit.text, edit.anchor));
         FUZZ_CHECK(edit.wordLeft(edit.cursor) <= edit.cursor && edit.wordRight(edit.cursor) >= edit.cursor);
         FUZZ_CHECK(edit.charLeft(edit.cursor) <= edit.cursor && edit.charRight(edit.cursor) <= edit.text.size());
