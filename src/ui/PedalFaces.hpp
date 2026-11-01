@@ -60,7 +60,11 @@ const std::vector<PedalFace>& genericPedalFaces();
 // The amp head photos' faces (resources/amps/, by image id "amp-<n>"; owner, 2026-10-31): five knobs on the head's blank
 // panel turning the NAM block's Input, Bass, Middle, Treble and Output, a power LED beside the power switch, and the
 // switch, which turns the block on or off. Coloured knobs only on heads that have that colour. nullptr for an unknown id.
+// Also the half stacks' (resources/amps/, "stack-<n>"; owner, 2026-11-01), whose heads have the same.
 const PedalFace* ampHeadFace(const char* id);
 const std::vector<PedalFace>& ampHeadFaces();
+
+// The half stack photos' faces (by image id "stack-<n>"): the head's five knobs, power LED and switch, as on the heads
+const std::vector<PedalFace>& halfStackFaces();
 
 } // namespace xythos

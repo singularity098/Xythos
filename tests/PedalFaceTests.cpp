@@ -165,6 +165,8 @@ TEST_CASE("every amp head photo has five knobs for the NAM tone controls, a powe
         if (entry.path().extension() != ".webp")
             continue;
         const std::string id = entry.path().stem().string();
+        if (!id.starts_with("amp-"))
+            continue; // the half stacks: below
         CAPTURE(id);
         ++count;
         const PedalFace* face = ampHeadFace(id.c_str());
@@ -197,4 +199,52 @@ TEST_CASE("every amp head photo has five knobs for the NAM tone controls, a powe
                         face->knobs[i - 1].y, face->knobs[i - 1].radius));
     }
     CHECK(count == static_cast<int>(ampHeadFaces().size()));
+}
+
+TEST_CASE("every half stack photo's head has five knobs for the NAM tone controls, a power LED and a switch")
+{
+    const std::filesystem::path images = XYTHOS_AMP_IMAGES;
+    int count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(images))
+    {
+        if (entry.path().extension() != ".webp")
+            continue;
+        const std::string id = entry.path().stem().string();
+        if (!id.starts_with("stack-"))
+            continue;
+        CAPTURE(id);
+        ++count;
+        const PedalFace* face = ampHeadFace(id.c_str());
+        REQUIRE(face != nullptr);
+        REQUIRE(face->knobs.size() == 5);
+        const char* const names[] = { "Input", "Bass", "Middle", "Treble", "Output" };
+        for (size_t i = 0; i < 5; ++i)
+        {
+            CHECK(std::string(face->knobs[i].param) == names[i]);
+            if (i > 0)
+                CHECK(face->knobs[i].x > face->knobs[i - 1].x);
+        }
+        REQUIRE(face->leds.size() == 1);
+        const FaceLed& led = face->leds[0];
+        const FaceSwitch& sw = face->footswitch;
+        CHECK(sw.radius > 0.0f);
+        CHECK(sw.x + sw.radius <= 1.0f);
+        CHECK(led.x < sw.x); // left of the switch
+        // nothing overlaps (the photos are 823 x 1280: y in width units is y * 1280 / 823)
+        const auto apart = [](float ax, float ay, float ar, float bx, float by, float br) {
+            return std::hypot(ax - bx, (ay - by) * 1280.0f / 823.0f) >= ar + br;
+        };
+        CHECK(apart(led.x, led.y, led.radius * 1.42f, sw.x, sw.y, sw.radius * 0.8f));
+        for (const FaceKnob& knob : face->knobs)
+        {
+            CHECK(knob.x - knob.radius >= 0.0f);
+            CHECK(apart(knob.x, knob.y, knob.radius, led.x, led.y, led.radius * 1.42f));
+            CHECK(apart(knob.x, knob.y, knob.radius, sw.x, sw.y, sw.radius));
+        }
+        for (size_t i = 1; i < face->knobs.size(); ++i)
+            CHECK(apart(face->knobs[i].x, face->knobs[i].y, face->knobs[i].radius, face->knobs[i - 1].x,
+                        face->knobs[i - 1].y, face->knobs[i - 1].radius));
+    }
+    CHECK(count >= 34);
+    CHECK(count == static_cast<int>(halfStackFaces().size()));
 }

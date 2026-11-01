@@ -238,15 +238,22 @@ TEST_CASE("a NAM file's name suggests its amp style")
 
 TEST_CASE("each NAM amp gets an amp head from its hash, matching the style its name suggests")
 {
-    std::vector<std::string> ids;
+    std::vector<std::string> all, ids; // every image in the folder, and the heads among them
     for (const auto& entry : std::filesystem::directory_iterator(XYTHOS_AMP_IMAGES))
         if (entry.path().extension() == ".webp")
-            ids.push_back(entry.path().stem().string());
+            all.push_back(entry.path().stem().string());
+    for (const std::string& id : all)
+        if (id.starts_with("amp-"))
+            ids.push_back(id);
     REQUIRE(ids.size() >= 78);
     CHECK(defaultAmpImage("", "x", {}).empty());
-    CHECK(defaultAmpImage("", "x", ids) == "amp-1");
+    CHECK(defaultAmpImage("", "x", all) == "amp-1");
     for (const std::string& id : ids)
         CHECK(ampImageStyle(id) != 0u);
+    // the half stacks in the same folder never come up as a head, and don't change the heads' picks
+    for (int i = 0; i < 200; ++i)
+        CHECK(defaultAmpImage("hash " + std::to_string(i), "My Amp", all)
+              == defaultAmpImage("hash " + std::to_string(i), "My Amp", ids));
 
     const std::string hash = "00112233445566778899aabbccddeeff";
     std::vector<std::string> reversed(ids.rbegin(), ids.rend());
@@ -263,4 +270,33 @@ TEST_CASE("each NAM amp gets an amp head from its hash, matching the style its n
     for (int i = 0; i < 10000; ++i)
         ++uses[defaultAmpImage("hash " + std::to_string(i), "My Amp", ids)];
     CHECK(uses.size() == ids.size());
+}
+
+TEST_CASE("each NAM amp with its cab gets a half stack from its hash")
+{
+    std::vector<std::string> all, stacks;
+    for (const auto& entry : std::filesystem::directory_iterator(XYTHOS_AMP_IMAGES))
+        if (entry.path().extension() == ".webp")
+            all.push_back(entry.path().stem().string());
+    for (const std::string& id : all)
+        if (id.starts_with("stack-"))
+            stacks.push_back(id);
+    REQUIRE(stacks.size() >= 34);
+    CHECK(defaultStackImage("", {}).empty());
+    CHECK(defaultStackImage("", { "amp-1", "amp-2" }).empty());
+    CHECK(defaultStackImage("", all) == "stack-1");
+    const std::string hash = "00112233445566778899aabbccddeeff";
+    std::vector<std::string> reversed(all.rbegin(), all.rend());
+    CHECK(defaultStackImage(hash, all) == defaultStackImage(hash, reversed));
+    std::map<std::string, int> uses;
+    for (int i = 0; i < 10000; ++i)
+        ++uses[defaultStackImage("hash " + std::to_string(i), all)];
+    CHECK(uses.size() == stacks.size()); // every one comes up, and only half stacks
+    for (const auto& [id, n] : uses)
+        CHECK(id.starts_with("stack-"));
+
+    CHECK(comboInName("Fender Deluxe Combo"));
+    CHECK(comboInName("vox_combos_ac15"));
+    CHECK_FALSE(comboInName("Marshall JCM800 head"));
+    CHECK_FALSE(comboInName("Kombo"));
 }

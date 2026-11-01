@@ -98,4 +98,13 @@ unsigned ampStyleInName(std::string_view name);
 // first. "" if `ids` is empty.
 std::string defaultAmpImage(std::string_view key, std::string_view fileName, const std::vector<std::string>& ids);
 
+// The half stack (a head on its cab; owner, 2026-11-01) a NAM model of an amp with its cab shows until the user picks
+// another: from the "stack-<n>" ids among `ids`, by `key` (its content hash) alone. An empty key gets the first. "" if
+// there are none.
+std::string defaultStackImage(std::string_view key, const std::vector<std::string>& ids);
+
+// Whether a NAM file's name says it's a combo amp ("combo", "Combos"), which shows a half stack: an amp with its
+// speakers, like an Amp + Cab model
+bool comboInName(std::string_view name);
+
 } // namespace xythos

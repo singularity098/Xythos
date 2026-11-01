@@ -336,13 +336,11 @@ unsigned ampStyleInName(std::string_view name)
 
 std::string defaultAmpImage(std::string_view key, std::string_view fileName, const std::vector<std::string>& ids)
 {
-    if (ids.empty())
+    // the heads only (the half stacks are in the same folder), in their numbers' order, so the pick doesn't depend
+    // on the order the ids come in
+    const std::vector<std::string> sorted = cabImagesOfSize(ids, "amp");
+    if (sorted.empty())
         return {};
-    // in their numbers' order, so the pick doesn't depend on the order the ids come in
-    std::vector<std::string> sorted = ids;
-    const auto number = [](const std::string& id) { return std::atoi(id.c_str() + id.rfind('-') + 1); };
-    std::stable_sort(sorted.begin(), sorted.end(),
-                     [&number](const std::string& a, const std::string& b) { return number(a) < number(b); });
     if (key.empty())
         return sorted.front();
     std::vector<std::string> pool;
@@ -354,6 +352,22 @@ std::string defaultAmpImage(std::string_view key, std::string_view fileName, con
         pool = sorted;
     Dice dice(key);
     return pool[static_cast<size_t>(dice.below(static_cast<int>(pool.size())))];
+}
+
+std::string defaultStackImage(std::string_view key, const std::vector<std::string>& ids)
+{
+    const std::vector<std::string> sorted = cabImagesOfSize(ids, "stack");
+    if (sorted.empty())
+        return {};
+    if (key.empty())
+        return sorted.front();
+    Dice dice(key);
+    return sorted[static_cast<size_t>(dice.below(static_cast<int>(sorted.size())))];
+}
+
+bool comboInName(std::string_view name)
+{
+    return hasWord(lowerAscii(name), "combo", true);
 }
 
 } // namespace xythos

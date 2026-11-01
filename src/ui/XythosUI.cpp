@@ -1495,17 +1495,9 @@ protected:
 
         case Hit::SetValue:
             setValue(static_cast<uint32_t>(hit->index), hit->value);
-            // the tuner's views: Runes is over Vernier/Strobe, and Tuner Chevrons picks the strobe
-            if (hit->index == static_cast<int>(kParamTunerStrobe)) // Vernier or Hive
-            {
+            // the tuner's views: Runes is over Vernier/Chevrons (Tuner Strobe)
+            if (hit->index == static_cast<int>(kParamTunerStrobe))
                 setValue(kParamTunerRunes, 0.0f);
-                setValue(kParamTunerChevrons, 0.0f);
-            }
-            else if (hit->index == static_cast<int>(kParamTunerChevrons))
-            {
-                setValue(kParamTunerRunes, 0.0f);
-                setValue(kParamTunerStrobe, 1.0f);
-            }
             return true;
 
         case Hit::Slider:
@@ -2330,7 +2322,8 @@ private:
             return;
         const BlockState& state = fChain.blocks[block];
         openCabDialog(state.config.value("hash", std::string()), state.config.value("path", std::string()),
-                      isNamPedal(state) ? PhotoKind::Pedal : isNamAmp(state) ? PhotoKind::Amp : PhotoKind::Cab);
+                      isNamPedal(state) ? PhotoKind::Pedal : isNamAmp(state) ? PhotoKind::Amp : PhotoKind::Cab,
+                      isNamAmp(state) && showsHalfStack(state));
         // for a block, the user's own images too (its kind's library)
         fImagesBlock = block;
         fImageKind = imageKindFor(state.typeId);
@@ -2340,8 +2333,10 @@ private:
 
     // The Cab Image dialog for an IR file (its content hash and path), or the Pedal Image dialog for a NAM pedal
     // capture; from Add Block, closing it goes back there
-    void openCabDialog(const std::string& hash, const std::string& path, PhotoKind kind = PhotoKind::Cab)
+    void openCabDialog(const std::string& hash, const std::string& path, PhotoKind kind = PhotoKind::Cab,
+                       bool stack = false)
     {
+        fCabStack = stack;
         const bool pedal = kind != PhotoKind::Cab;
         fImagesBlock = -1; // from Add Block: a file, not a block (openCabDialog(int) sets it)
         fCabHash = hash;
@@ -2912,7 +2907,8 @@ private:
             }
             if (row.type == &kNamBlockDescriptor && isAmpGear(namGear(row.entry->gearType)))
             {
-                openCabDialog(row.entry->hash, row.entry->path, PhotoKind::Amp);
+                openCabDialog(row.entry->hash, row.entry->path, PhotoKind::Amp,
+                              showsHalfStack(namGear(row.entry->gearType), row.entry->path));
                 return true;
             }
         }
@@ -3506,20 +3502,43 @@ private:
         return thumb ? builtinThumb(key) : builtinImage(key);
     }
 
-    // The amp head a NAM amp shows: the one the user picked for it (Settings::ampImages), else one picked by its hash
-    // among those suiting the style its name suggests
-    std::string ampImageFor(const std::string& hash, const std::string& path) const
+    // The amp a NAM amp shows: the one the user picked for it (Settings::ampImages: a head or a half stack), else, for
+    // an amp with its cab (`stack`, showsHalfStack()), a half stack picked by its hash, or for the rest a head picked
+    // by its hash among those suiting the style its name suggests
+    std::string ampImageFor(const std::string& hash, const std::string& path, bool stack) const
     {
         const std::vector<std::string>& ids = builtinAmpIds();
         const auto picked = fSettings.ampImages.find(cabKey(hash, path));
         if (picked != fSettings.ampImages.end() && std::find(ids.begin(), ids.end(), picked->second) != ids.end())
             return picked->second;
+        return defaultAmpImageFor(hash, path, stack);
+    }
+
+    std::string defaultAmpImageFor(const std::string& hash, const std::string& path, bool stack) const
+    {
+        const std::vector<std::string>& ids = builtinAmpIds();
+        if (stack)
+            if (std::string id = defaultStackImage(cabKey(hash, path), ids); !id.empty())
+                return id;
         return defaultAmpImage(cabKey(hash, path), path.empty() ? std::string() : fileStem(path), ids);
     }
 
     std::string ampImageFor(const BlockState& block) const
     {
-        return ampImageFor(block.config.value("hash", std::string()), block.config.value("path", std::string()));
+        return ampImageFor(block.config.value("hash", std::string()), block.config.value("path", std::string()),
+                           showsHalfStack(block));
+    }
+
+    // NAM models of an amp with its cab (gear type Amp + Cab) or a combo amp ("combo" in the file name) show a half
+    // stack, so it's plain they include the speakers (owner, 2026-11-01); the other amps a head
+    static bool showsHalfStack(NamGear gear, const std::string& path)
+    {
+        return gear == NamGear::AmpCab || (!path.empty() && comboInName(fileStem(path)));
+    }
+
+    bool showsHalfStack(const BlockState& block) const
+    {
+        return showsHalfStack(namGear(namFileInfo(block).gearType), block.config.value("path", std::string()));
     }
 
     static const std::vector<std::string>& photoIds(PhotoKind kind)
@@ -4939,12 +4958,13 @@ private:
         case Hit::CabImage:
             if (hit.index >= 0 && hit.index < static_cast<int>(fChain.blocks.size()) && isNamAmp(fChain.blocks[hit.index]))
                 return { "Amp Image",
-                         "The amp head shown for this NAM model. Each model gets one of the built-in heads from its "
-                         "file's content, one that suits the style its name suggests (clean, jazz, crunch, lead, or "
-                         "very heavy for the strangest heads). Its knobs turn the block's Input, Bass, Middle, Treble "
-                         "and Output, and its power switch turns the block on or off. Right-click it (or use Image…) "
-                         "to pick another head or one of your own images: a built-in pick follows the file into every "
-                         "chain and preset, until you pick again or reset it to the default." };
+                         "The amp shown for this NAM model. Each model gets one of the built-in amps from its file's "
+                         "content: a half stack (a head on its cab) for a model of an amp with its cab or a combo, "
+                         "else a head that suits the style its name suggests (clean, jazz, crunch, lead, or very heavy "
+                         "for the strangest heads). The head's knobs turn the block's Input, Bass, Middle, Treble and "
+                         "Output, and its power switch turns the block on or off. Right-click it (or use Image…) to "
+                         "pick another head or half stack, or one of your own images: a built-in pick follows the "
+                         "file into every chain and preset, until you pick again or reset it to the default." };
             if (hit.index >= 0 && hit.index < static_cast<int>(fChain.blocks.size()) && isNamPedal(fChain.blocks[hit.index]))
                 return { "Pedal Image",
                          "The pedal shown for this NAM pedal capture. Each capture gets one of the built-in pedals "
@@ -4967,15 +4987,15 @@ private:
                          fCabKind == PhotoKind::Pedal
                              ? "Shows the pedal this capture gets by default again: picked from its file's content."
                          : fCabKind == PhotoKind::Amp
-                             ? "Shows the amp head this model gets by default again: picked from its file's content "
-                               "and name."
+                             ? "Shows the amp this model gets by default again: picked from its file's content (and "
+                               "for a head, its name)."
                              : "Shows the cab this IR gets by default again: picked from its file's content." };
             return {};
         case Hit::BlockImage:
             return { "Image",
                      "Picks the image this block shows: its stock image (for IRs and NAM models, any of the built-in "
-                     "cabs, pedals or amp heads) or one of your own, from your library of amp, cab or pedal images. "
-                     "Add a photo of your real gear (PNG, JPEG or WebP) and pick it. Your images are shown as they "
+                     "cabs, pedals, amp heads or half stacks) or one of your own, from your library of amp, cab or "
+                     "pedal images. Add a photo of your real gear (PNG, JPEG or WebP) and pick it. Your images are shown as they "
                      "are, with no knobs, power light or footswitch on them. Deleting an image from the library puts "
                      "the stock image back on the blocks that used it. Right-clicking the block's image opens the "
                      "same chooser." };
@@ -6283,19 +6303,17 @@ private:
         // header: view, mute, reference pitch
         const float hy = panel.y + 16.0f;
         label(panel.x + 16.0f, hy + 14.0f, "Tuner", theme::text, 16.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        // the view: Runes (the default; owner, 2026-10-31) is a parameter of its own, over Needle (Vernier) and Strobe;
-        // Tuner Chevrons picks the strobe (Hive or Chevrons). Choosing a view sets the others (onMouse(), SetValue).
+        // the view: Vernier (the default; owner, 2026-11-01; was Runes), Runes, or the Chevrons strobe. Runes is a
+        // parameter of its own, over Tuner Strobe (Vernier or Chevrons); choosing a view sets the other (onMouse(),
+        // SetValue). Tuner Chevrons is unused since Hive was removed (owner, 2026-11-01).
         const bool runes = fParams[kParamTunerRunes] >= 0.5f;
         const bool strobe = !runes && fParams[kParamTunerStrobe] >= 0.5f;
-        const bool chevrons = strobe && fParams[kParamTunerChevrons] >= 0.5f;
-        drawValueButton({ panel.x + 96.0f, hy, 84.0f, 28.0f }, "Runes", runes, Hit::SetValue, kParamTunerRunes, 1);
-        drawValueButton({ panel.x + 184.0f, hy, 84.0f, 28.0f }, "Vernier", !runes && !strobe, Hit::SetValue,
+        drawValueButton({ panel.x + 96.0f, hy, 84.0f, 28.0f }, "Vernier", !runes && !strobe, Hit::SetValue,
                         kParamTunerStrobe, 0);
-        drawValueButton({ panel.x + 272.0f, hy, 84.0f, 28.0f }, "Hive", strobe && !chevrons, Hit::SetValue,
-                        kParamTunerStrobe, 1);
-        drawValueButton({ panel.x + 360.0f, hy, 84.0f, 28.0f }, "Chevrons", chevrons, Hit::SetValue,
-                        kParamTunerChevrons, 1);
-        drawButton({ panel.x + 464.0f, hy, 76.0f, 28.0f }, "Mute", fParams[kParamTunerMute] >= 0.5f, theme::accent,
+        drawValueButton({ panel.x + 184.0f, hy, 84.0f, 28.0f }, "Runes", runes, Hit::SetValue, kParamTunerRunes, 1);
+        drawValueButton({ panel.x + 272.0f, hy, 84.0f, 28.0f }, "Chevrons", strobe, Hit::SetValue, kParamTunerStrobe,
+                        1);
+        drawButton({ panel.x + 376.0f, hy, 76.0f, 28.0f }, "Mute", fParams[kParamTunerMute] >= 0.5f, theme::accent,
                    Hit::Toggle, kParamTunerMute);
 
         char ref[32];
@@ -6326,10 +6344,7 @@ private:
         {
             const float w = std::min(panel.w - 32.0f, 640.0f);
             const Rect r { cx - w / 2, viewTop, w, std::min(viewHeight, 160.0f) };
-            if (chevrons)
-                drawChevrons(r, active, inTune);
-            else
-                drawStrobe(r, active, inTune);
+            drawChevrons(r, active, inTune);
         }
     }
 
@@ -6369,7 +6384,8 @@ private:
 
     // Needle: Vernier (owner, 2026-10-31; needle concept 8 of the second round of tuner mockups). Two rings of ticks
     // around the note, like a vernier scale: the outer one spans ±50 cents to find the note, with a dot riding outside
-    // it; the inner one only ±5, so the last cent is easy to see, its dot and arc lit once the pitch is within 5 cents.
+    // it; the inner one only ±10 (owner, 2026-11-01; was ±5, too touchy), so the last cents are easy to see, its dot
+    // and arc lit once the pitch is within 10 cents.
     // A green glow inside in tune.
     void drawVernier(const Rect& r, bool active, bool inTune, const Color& color)
     {
@@ -6381,6 +6397,7 @@ private:
         constexpr float span = 0.8f * kPi, up = -kPi / 2;
         const float cents = active ? fNeedleCents : 0.0f;
         const Color unlit(1.0f, 1.0f, 1.0f, 0.16f);
+        constexpr float kVernierFine = 10.0f; // the inner ring's range in cents
 
         auto ticks = [&](float radius, float range, float step, float major, float zone) {
             const int count = static_cast<int>(std::lround(2.0f * range / step));
@@ -6401,7 +6418,7 @@ private:
             }
         };
         ticks(outer, 50.0f, 2.0f, 10.0f, kTunerInTuneCents);
-        ticks(inner, 5.0f, 0.25f, 1.0f, 0.0f);
+        ticks(inner, kVernierFine, 0.5f, 2.0f, 0.0f);
 
         if (inTune)
         {
@@ -6420,9 +6437,9 @@ private:
             fillColor(color);
             fill();
         }
-        // the fine dot and its arc from the top, outside the inner ring, lit within 5 cents
-        const bool fine = active && std::fabs(cents) <= 5.0f;
-        const float a = up + std::clamp(cents, -5.0f, 5.0f) / 5.0f * span;
+        // the fine dot and its arc from the top, outside the inner ring, lit within its range
+        const bool fine = active && std::fabs(cents) <= kVernierFine;
+        const float a = up + std::clamp(cents, -kVernierFine, kVernierFine) / kVernierFine * span;
         if (fine && std::fabs(a - up) > 1e-3f)
         {
             beginPath();
@@ -6440,7 +6457,7 @@ private:
         const float end = up + span;
         label(cx + std::cos(end) * (outer + 20.0f), cy + std::sin(end) * (outer + 20.0f), "±50", theme::textDim, 11.0f,
               ALIGN_CENTER | ALIGN_MIDDLE);
-        label(cx + std::cos(end) * (inner - 22.0f * s), cy + std::sin(end) * (inner - 22.0f * s), "±5",
+        label(cx + std::cos(end) * (inner - 22.0f * s), cy + std::sin(end) * (inner - 22.0f * s), "±10",
               theme::textDim, 11.0f, ALIGN_CENTER | ALIGN_MIDDLE);
 
         // the note inside; the guidance in the gap at the bottom of the rings
@@ -6530,68 +6547,6 @@ private:
         const float ly = bottom + 9.0f + kLabels / 2;
         for (const auto& [i, text] : { std::pair { 0, "−50" }, { 5, "−25" }, { 15, "+25" }, { 20, "+50" } })
             label(x0 + i * pitch, ly, text, theme::textDim, 11.0f, ALIGN_CENTER | ALIGN_MIDDLE);
-    }
-
-    // Strobe: Hive (owner, 2026-10-31; strobe concept 6 of the second round of tuner mockups). A honeycomb window with
-    // diagonal bands of light sweeping across its cells, at a speed proportional to how far out of tune the note is;
-    // still in tune. The cells are drawn in a few brightness steps, one path each.
-    void drawStrobe(const Rect& r, bool active, bool inTune)
-    {
-        // a translucent black window with a hairline edge
-        fillRect(r.x, r.y, r.w, r.h, theme::panelFill, 10.0f);
-        beginPath();
-        roundedRect(r.x + 0.5f, r.y + 0.5f, r.w - 1.0f, r.h - 1.0f, 10.0f);
-        strokeColor(Color(1.0f, 1.0f, 1.0f, 0.18f));
-        strokeWidth(1.0f);
-        stroke();
-        scissor(r.x + 1.0f, r.y + 1.0f, r.w - 2.0f, r.h - 2.0f);
-
-        const Color color = !active ? Color(1.0f, 1.0f, 1.0f, 0.18f) : inTune ? theme::good : theme::accent;
-        constexpr float kSide = 13.0f; // a cell's corner radius
-        constexpr int kSteps = 8;      // brightness steps
-        const float across = kSide * std::sqrt(3.0f);
-        const float shift = fStrobePhase[0] * 0.6f;
-        auto band = [&](float x, float y) { // 0..1, the diagonal bands
-            const float b = 0.5f + 0.5f * std::cos((x * 0.8f + y * 0.6f - shift) / 120.0f * 2.0f * static_cast<float>(M_PI));
-            return b * b * b * b;
-        };
-        auto hexagon = [&](float x, float y) {
-            for (int k = 0; k < 6; ++k)
-            {
-                const float a = static_cast<float>(k) * static_cast<float>(M_PI) / 3.0f + static_cast<float>(M_PI) / 6.0f;
-                const float px = x + std::cos(a) * (kSide - 2.0f), py = y + std::sin(a) * (kSide - 2.0f);
-                k == 0 ? moveTo(px, py) : lineTo(px, py);
-            }
-            closePath();
-        };
-        const int rows = static_cast<int>(r.h / (kSide * 1.5f)) + 2;
-        const int cols = static_cast<int>(r.w / across) + 2;
-        for (int step = 0; step < kSteps; ++step)
-        {
-            const float lo = static_cast<float>(step) / kSteps, hi = static_cast<float>(step + 1) / kSteps;
-            const float b = (lo + hi) / 2;
-            beginPath();
-            for (int row = 0; row < rows; ++row)
-                for (int col = -1; col < cols; ++col)
-                {
-                    const float x = col * across + (row % 2) * across / 2, y = row * kSide * 1.5f;
-                    const float v = band(x, y);
-                    if (v >= lo && (v < hi || step == kSteps - 1))
-                        hexagon(r.x + x, r.y + y);
-                }
-            if (b > 0.5f)
-            {
-                globalAlpha((b - 0.5f) * 0.35f);
-                fillColor(color);
-                fill();
-            }
-            globalAlpha(0.12f + 0.88f * b);
-            strokeColor(color);
-            strokeWidth(1.0f);
-            stroke();
-        }
-        globalAlpha(1.0f);
-        resetScissor();
     }
 
     // Strobe: Chevrons (owner, 2026-10-31; strobe concept 5 of the second round of tuner mockups). Three rows of
@@ -8038,7 +7993,9 @@ private:
                            : namGear(row.entry->gearType) == NamGear::Pedal
                                ? pedalImage(pedalImageFor(row.entry->hash, row.entry->path), true)
                            : isAmpGear(namGear(row.entry->gearType))
-                               ? ampImage(ampImageFor(row.entry->hash, row.entry->path), true)
+                               ? ampImage(ampImageFor(row.entry->hash, row.entry->path,
+                                                     showsHalfStack(namGear(row.entry->gearType), row.entry->path)),
+                                         true)
                                : nullptr;
             if (img)
                 drawBlockImage(*img, row.type, -1, r.x + 8.0f, r.y + 4.0f, thumbW, r.h - 8.0f, 3.0f, false);
@@ -8463,15 +8420,21 @@ private:
 
         const std::vector<std::string>& ids = photoIds(kind);
         const std::string stem = fCabPath.empty() ? std::string() : fileStem(fCabPath);
-        const std::string current = amp ? ampImageFor(fCabHash, fCabPath)
+        const std::string current = amp ? ampImageFor(fCabHash, fCabPath, fCabStack)
                                   : pedal ? pedalImageFor(fCabHash, fCabPath) : cabImageFor(fCabHash, fCabPath);
-        const std::string fallback = amp ? defaultAmpImage(cabKey(fCabHash, fCabPath), stem, ids)
+        const std::string fallback = amp ? defaultAmpImageFor(fCabHash, fCabPath, fCabStack)
                                    : pedal ? defaultPedalImage(cabKey(fCabHash, fCabPath), ids)
                                            : defaultCabImage(cabKey(fCabHash, fCabPath), stem, ids);
-        // the sections: a cab size each, or for pedals and amps one without a heading
+        // the sections: a cab size each; for pedals one without a heading; for amps the heads and the half stacks,
+        // the kind the model shows by default first, each with a heading
         std::vector<std::vector<std::string>> sizes;
-        if (pedal)
-            sizes.push_back(cabImagesOfSize(ids, amp ? "amp" : "pedal"));
+        if (amp)
+        {
+            sizes.push_back(cabImagesOfSize(ids, fCabStack ? "stack" : "amp"));
+            sizes.push_back(cabImagesOfSize(ids, fCabStack ? "amp" : "stack"));
+        }
+        else if (pedal)
+            sizes.push_back(cabImagesOfSize(ids, "pedal"));
         else
             for (const char* size : kCabSizes)
                 sizes.push_back(cabImagesOfSize(ids, size));
@@ -8484,34 +8447,40 @@ private:
         const size_t ownTiles = block != nullptr ? fImageList.size() + 1 : 0;
 
         constexpr float groupH = 30.0f, sectionH = 40.0f, gap = 10.0f;
-        const float tile = amp ? 160.0f : 124.0f; // the heads are wide
+        const float tile = amp ? 160.0f : 124.0f; // the heads are wide (and the user's images take their shape)
         const float tileH = amp ? tile * 0.62f : tile;
+        // a section's built-in tiles: the half stacks are tall
+        const auto isStacks = [&](size_t i) { return amp && !sizes[i].empty() && cabImageSize(sizes[i][0]) == "stack"; };
+        const auto tileWOf = [&](size_t i) { return isStacks(i) ? 104.0f : tile; };
+        const auto tileHOf = [&](size_t i) { return isStacks(i) ? 104.0f * 1.555f : amp ? tile * 0.62f : tile; };
         const float listX = x + 16.0f, listY = y + 66.0f, listH = h - 66.0f - 64.0f;
         float listW = w - 32.0f;
-        const auto columnsFor = [&](float width) { return std::max(1, static_cast<int>((width + gap) / (tile + gap))); };
+        const auto columnsFor = [&](float width, float tileW) {
+            return std::max(1, static_cast<int>((width + gap) / (tileW + gap)));
+        };
         const auto ownHeight = [&](int columns) {
             return ownTiles == 0 ? 0.0f
                                  : groupH + ((ownTiles + columns - 1) / columns) * (tileH + gap) + gap
-                                       + (pedal ? groupH : 0.0f);
+                                       + (pedal && !amp ? groupH : 0.0f);
         };
-        const auto contentFor = [&](int columns) {
-            float total = (pedal ? 0.0f : 2 * groupH) + ownHeight(columns);
+        const auto contentFor = [&](float width) {
+            float total = (pedal ? 0.0f : 2 * groupH) + ownHeight(columnsFor(width, tile));
             for (size_t i = 0; i < sizes.size(); ++i)
             {
-                total += pedal ? 0.0f : sectionH;
+                total += amp ? groupH : pedal ? 0.0f : sectionH;
+                const int c = columnsFor(width, tileWOf(i));
                 if (open(i) && !sizes[i].empty())
-                    total += ((sizes[i].size() + columns - 1) / columns) * ((amp ? tile * 0.62f : tile) + gap) + gap;
+                    total += ((sizes[i].size() + c - 1) / c) * (tileHOf(i) + gap) + gap;
             }
             return total;
         };
-        int columns = columnsFor(listW);
-        float contentH = contentFor(columns);
+        float contentH = contentFor(listW);
         if (contentH > listH)
         {
             listW -= kListBarWidth + 4.0f;
-            columns = columnsFor(listW);
-            contentH = contentFor(columns);
+            contentH = contentFor(listW);
         }
+        const int columns = columnsFor(listW, tile);
         fListScroll = std::clamp(fListScroll, 0.0f, std::max(0.0f, contentH - listH));
         if (contentH > listH)
             drawListScrollBar(listX + listW + 4.0f, listY, listH, contentH);
@@ -8585,17 +8554,26 @@ private:
                 }
             }
             ry += ((ownTiles + columns - 1) / columns) * (tileH + gap) + gap;
-            if (pedal)
+            if (pedal && !amp)
             {
-                // the built-in ones' heading (the cabs have theirs: Bass and Guitar)
+                // the built-in ones' heading (the cabs have theirs: Bass and Guitar; the amps one per section)
                 if (visible(ry, groupH))
-                    label(listX + 4.0f, ry + groupH - 10.0f, amp ? "Built-in heads" : "Built-in pedals", theme::accent,
-                          12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+                    label(listX + 4.0f, ry + groupH - 10.0f, "Built-in pedals", theme::accent, 12.0f,
+                          ALIGN_LEFT | ALIGN_MIDDLE);
                 ry += groupH;
             }
         }
         for (size_t i = 0; i < sizes.size(); ++i)
         {
+            const float tileW = tileWOf(i), tileHi = tileHOf(i);
+            const int cols = columnsFor(listW, tileW);
+            if (amp)
+            {
+                if (visible(ry, groupH))
+                    label(listX + 4.0f, ry + groupH - 10.0f, isStacks(i) ? "Half stacks" : "Heads", theme::accent,
+                          12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+                ry += groupH;
+            }
             if (!pedal && (i == 0 || i == kBassCabSizes))
             {
                 if (visible(ry, groupH))
@@ -8644,7 +8622,7 @@ private:
             // its cabs: the IR's current one outlined, the default one labelled
             for (size_t k = 0; k < sizes[i].size(); ++k)
             {
-                const Rect r { listX + (k % columns) * (tile + gap), ry + (k / columns) * (tileH + gap), tile, tileH };
+                const Rect r { listX + (k % cols) * (tileW + gap), ry + (k / cols) * (tileHi + gap), tileW, tileHi };
                 if (!visible(r.y, r.h))
                     continue;
                 const std::string& id = sizes[i][k];
@@ -8673,7 +8651,7 @@ private:
                 const int index = static_cast<int>(std::find(ids.begin(), ids.end(), id) - ids.begin());
                 fHits.push_back({ clipped(r), Hit::CabChoose, index });
             }
-            ry += ((sizes[i].size() + columns - 1) / columns) * ((amp ? tile * 0.62f : tile) + gap) + gap;
+            ry += ((sizes[i].size() + cols - 1) / cols) * (tileHi + gap) + gap;
         }
         restore();
 
@@ -8684,15 +8662,16 @@ private:
             drawButton(reset, "Reset to Default", false, theme::accent, Hit::CabChoose, -1);
         label(x + 20.0f, y + h - 40.0f,
               own ? "This block shows one of your images, as it is: no knobs, power light or footswitch on it."
-              : amp ? (picked ? "You picked this model's amp head. It follows the file into every chain and preset."
-                            : "This model shows its default head, picked from the file's content and name.")
+              : amp ? (picked ? "You picked this model's amp. It follows the file into every chain and preset."
+                       : fCabStack ? "This model includes its cab, so it shows a half stack, picked from the file's content."
+                                   : "This model shows its default head, picked from the file's content and name.")
               : pedal ? (picked ? "You picked this capture's pedal. It follows the file into every chain and preset."
                               : "This capture shows its default pedal, picked from the file's content.")
                     : (picked ? "You picked this IR's cab. It follows the file into every chain and preset."
                               : "This IR shows its default cab, picked from the file's content."),
               theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
         label(x + 20.0f, y + h - 24.0f,
-              amp ? "Click a head to show it for this model from now on."
+              amp ? "Click a head or half stack to show it for this model from now on."
               : pedal ? "Click a pedal to show it for this capture from now on."
                     : "Click a cab to show it for this IR from now on.",
               theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -9513,6 +9492,7 @@ private:
     PhaseResult fPhase;
     std::chrono::steady_clock::time_point fPhaseChangedAt; // the text fields drawn this frame, in order (Tab moves through them)
     PhotoKind fCabKind = PhotoKind::Cab; // the dialog picks a NAM pedal's generic pedal image or an amp's head instead
+    bool fCabStack = false;              // for an amp: it shows a half stack by default (showsHalfStack())
 
     std::chrono::steady_clock::time_point fChainChangedAt = std::chrono::steady_clock::now();
     bool fStatusPending = true;

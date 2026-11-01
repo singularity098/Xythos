@@ -73,7 +73,7 @@ enum LaterParam : uint32_t {
     kParamTuner,            // on/off
     kParamTunerMute,        // mute the guitar while the tuner is on
     kParamTunerReference,   // A4 in Hz
-    kParamTunerStrobe,      // hidden, UI only: strobe view (Hive, or Chevrons) instead of the needle (Vernier)
+    kParamTunerStrobe,      // hidden, UI only: the strobe view (Chevrons) instead of the needle (Vernier)
     kParamTunerFrequency,   // output: detected frequency in Hz, 0 when there's no clear note
     kParamTunerClarity,     // output: 0..1
 
@@ -114,7 +114,7 @@ enum LaterParam : uint32_t {
 
     // added after the latches (each new one goes last: the indices are DAW automation IDs)
     kParamTunerRunes = kParamSlotLatchEnd, // hidden, UI only: the Runes view (owner, 2026-10-31); over Tuner Strobe
-    kParamTunerChevrons,    // hidden, UI only: with Tuner Strobe on, the Chevrons strobe instead of Hive (owner, 2026-10-31)
+    kParamTunerChevrons,    // hidden, unused: picked Chevrons over Hive, until Hive was removed (owner, 2026-11-01)
 
     kParamCount
 };
