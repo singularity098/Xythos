@@ -3,6 +3,7 @@
 
 #include "state/Settings.hpp"
 
+#include "state/ChainState.hpp" // jsonFloat()
 #include "state/Paths.hpp"
 
 #include <nlohmann/json.hpp>
@@ -77,7 +78,26 @@ Settings Settings::fromJson(std::string_view text)
         get("cabImages", settings.cabImages);
         get("pedalImages", settings.pedalImages);
         get("ampImages", settings.ampImages);
-        get("blockDefaults", settings.blockDefaults);
+        if (const auto defaults = root.find("blockDefaults"); defaults != root.end())
+        {
+            try
+            {
+                std::map<std::string, std::map<std::string, float>> read;
+                if (!defaults->is_object())
+                    throw json::type_error::create(302, "blockDefaults isn't an object", nullptr);
+                for (const auto& [typeId, controls] : defaults->items())
+                {
+                    if (!controls.is_object())
+                        throw json::type_error::create(302, "a block's defaults aren't an object", nullptr);
+                    for (const auto& [control, value] : controls.items())
+                        read[typeId][control] = jsonFloat(value);
+                }
+                settings.blockDefaults = std::move(read);
+            }
+            catch (const json::exception&)
+            {
+            }
+        }
     }
     catch (const json::exception&)
     {

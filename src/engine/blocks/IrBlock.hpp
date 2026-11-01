@@ -24,5 +24,7 @@ enum IrParam {
 
 // Longest IR used; longer files are truncated
 constexpr double kIrMaxSeconds = 10.0;
+// Samples past this (+60 dB) mark a damaged file, which isn't loaded
+constexpr float kIrMaxPeak = 1000.0f;
 
 } // namespace xythos

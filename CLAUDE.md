@@ -100,6 +100,10 @@ tests/                doctest unit tests; TestSupport.hpp has a test block and a
                       synthetic guitar (and 5-string bass scenes) with ground truth for TrackingTests.cpp (the note tracking benchmark:
                       XYTHOS_TRACKING_BENCH=1 ./build/xythos-tests -tc="*tracking benchmark"; PolyTrackingTests.cpp
                       is the chords' benchmark; RealTrackingTests.cpp scores both trackers on the owner's DI recordings)
+fuzz/                 Fuzz targets (fuzz/README.md): every parser of outside input (chain state, presets and their zips, settings,
+                      update check, WAV, IR, NAM, WebP, stb_image) and the engine under random host events. xythos-fuzz-replay
+                      (a ctest: seed corpus fuzz/corpus/ + fixed mutations, any compiler); libFuzzer + ASan/UBSan binaries with
+                      -DXYTHOS_FUZZ=ON (clang), run by fuzz/run_all.sh and weekly in CI (.github/workflows/fuzz.yml)
 tests/recordings/     The owner's guitar recordings (MP3) and their note lists (<clip>.notes); decode them with
                       tools/decode_recordings.sh (ffmpeg) before XYTHOS_TRACKING_BENCH=1 ./build/xythos-tests -tc="*real recordings*"
 docs/                 Requirements, architecture, and the pedal image prompts (PedalImagePrompts.md)
@@ -142,6 +146,8 @@ cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-f
 cmake --build build-tsan --target xythos-tests && ./build-tsan/xythos-tests
 ```
 
+Fuzzing (after touching a parser, the preset loader or the engine; setup in `fuzz/README.md`): build `build-fuzz` with `-DXYTHOS_FUZZ=ON` and clang's sanitizers, then `fuzz/run_all.sh 60`. A crash file reproduces anywhere with `./build/xythos-fuzz-replay --target <name> <file>`; once fixed, add it to `fuzz/corpus/<name>/`.
+
 `lv2apply` can't run the plugin (it doesn't support DPF's atom port). To see and drive the UI headless:
 
 ```sh
@@ -175,6 +181,7 @@ The file browser opens in the host's working directory. Final checks happen in R
 - Parameter values live in the host. `ChainState.params`/`bypass` are only for presets and undo; the UI pushes them to the host.
 - The chain reaches the DSP as the `chain` state string (JSON). `setState()` runs off the audio thread and builds the new graph there.
 - New audio-path code gets a test, including the no-allocation check (`testing::AllocationGuard`).
+- Files from outside (presets, models, IRs, images, settings) are hostile until checked: never build a path from what's in them without checking it's a plain name or a content hash (a preset's `hash` once let it write anywhere; `loadPresetFile()`), and a new file format or parser gets a fuzz target (`fuzz/`).
 - No fast-math (`-ffast-math`, `/fp:fast`) and no NaN sentinels: compilers may assume NaN never occurs. A Windows-only test failure came from exactly this. To check, build the tests with `-DCMAKE_CXX_FLAGS=-ffast-math` and run them.
 
 ## Notes

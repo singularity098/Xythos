@@ -148,6 +148,13 @@ Hsv toHsv(Rgb color)
 
 Rgb fromHsv(Hsv hsv)
 {
+    // a drag's maths never gives NaN or infinity, but they'd make the conversion to int below undefined
+    if (!std::isfinite(hsv.h))
+        hsv.h = 0.0;
+    if (std::isnan(hsv.s))
+        hsv.s = 0.0;
+    if (std::isnan(hsv.v))
+        hsv.v = 0.0;
     const double h = std::fmod(std::fmod(hsv.h, 360.0) + 360.0, 360.0) / 60.0;
     const double s = std::clamp(hsv.s, 0.0, 1.0), v = std::clamp(hsv.v, 0.0, 1.0);
     const double c = v * s, x = c * (1.0 - std::fabs(std::fmod(h, 2.0) - 1.0)), m = v - c;

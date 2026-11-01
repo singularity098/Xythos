@@ -1,0 +1,5 @@
+# UBSan reports that aren't ours to fix, skipped in fuzz runs (fuzz/run_all.sh sets UBSAN_OPTIONS to this file).
+# Only checks the build makes recoverable (-fsanitize-recover=...) can be suppressed.
+
+# FFTConvolver's default constructor memsets its zero-length buffers (a null pointer, length 0) on every IR load
+nonnull-attribute:FFTConvolver/Utilities.h

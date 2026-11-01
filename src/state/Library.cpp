@@ -62,6 +62,9 @@ std::string stem(const std::string& path)
 
 // A zip archive opened for reading. miniz opens files through stdio; on Windows we open them ourselves so
 // non-ASCII paths work.
+// The largest file read from inside a zip (NAM models are a few MB, IRs tens at most)
+constexpr uint64_t kMaxZipEntryBytes = 512ull << 20;
+
 class Zip {
 public:
     explicit Zip(const fs::path& path)
@@ -101,6 +104,10 @@ public:
     {
         mz_zip_archive_file_stat st;
         if (!stat(index, st) || st.m_is_directory)
+            return std::nullopt;
+        // The size comes from the archive, which may come from anyone (presets): a tiny file claiming gigabytes
+        // must not make us allocate them. Deflate packs at most ~1032:1; nothing we read comes near the cap.
+        if (st.m_uncomp_size > kMaxZipEntryBytes || st.m_uncomp_size > st.m_comp_size * 1032 + 1024)
             return std::nullopt;
         std::string data(static_cast<size_t>(st.m_uncomp_size), '\0');
         if (!mz_zip_reader_extract_to_mem(&fZip, index, data.data(), data.size(), 0))

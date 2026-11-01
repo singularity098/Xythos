@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "chain": {
+    "version": 2,
+    "blocks": [
+      {
+        "type": "synth",
+        "slot": 2,
+        "params": [
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "bypass": false,
+        "config": {
+          "lookahead": 10
+        }
+      },
+      {
+        "type": "looper",
+        "slot": 4,
+        "params": [
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "bypass": false,
+        "config": {
+          "countIn": true,
+          "latency": 10
+        }
+      }
+    ]
+  },
+  "globals": {
+    "input": 3.0,
+    "output": -6.0,
+    "limiter": 1.0
+  }
+}

@@ -10,6 +10,8 @@
 #include "state/Preset.hpp"
 #include "state/UserImages.hpp"
 
+#include <miniz.h>
+
 #include <filesystem>
 #include <fstream>
 
@@ -251,5 +253,66 @@ TEST_CASE("exported presets carry the user's block images, which go into the lib
         CHECK(loaded->preset.chain.blocks[0].image == "My Amp 2.png");
         CHECK(readFile(pathFromUtf8(userImagePath(ImageKind::Amp, "My Amp 2.png"))) == png);
         CHECK(loaded->preset.chain.blocks[2].image == "Delay.jpg");
+    }
+}
+
+TEST_CASE("a preset's embedded files only go into the cache, under their real content hash")
+{
+    PresetFixture fixture;
+    const fs::path outside = fixture.root / "outside";
+    const std::string realHash = hashBytes("model bytes");
+
+    // a preset written by hand: what its blocks say decides where an embedded file would be extracted
+    auto presetWith = [&](const std::string& hash, const std::string& file, const std::string& entry) {
+        const std::string path = pathToUtf8(fixture.root / "Hostile.xythos");
+        Preset preset;
+        BlockState amp { "nam", 0 };
+        amp.config = { { "path", file }, { "hash", hash } };
+        preset.chain.blocks = { amp };
+        mz_zip_archive zip {};
+        REQUIRE(mz_zip_writer_init_file(&zip, path.c_str(), 0));
+        const std::string json = preset.toJson();
+        REQUIRE(mz_zip_writer_add_mem(&zip, "preset.json", json.data(), json.size(), MZ_DEFAULT_COMPRESSION));
+        REQUIRE(mz_zip_writer_add_mem(&zip, entry.c_str(), "model bytes", 11, MZ_DEFAULT_COMPRESSION));
+        REQUIRE(mz_zip_writer_finalize_archive(&zip));
+        mz_zip_writer_end(&zip);
+        return loadPresetFile(path, nullptr);
+    };
+
+    SUBCASE("a hash that climbs out of the cache")
+    {
+        const std::string hash = "../../outside";
+        const auto loaded = presetWith(hash, "/gone/Amp.nam", "files/" + hash + "/Amp.nam");
+        REQUIRE(loaded);
+        CHECK(loaded->sources[0] == FileSource::Missing);
+        CHECK(!fs::exists(outside));
+    }
+    SUBCASE("an absolute path as the hash")
+    {
+        const std::string hash = pathToUtf8(outside);
+        const auto loaded = presetWith(hash, "/gone/Amp.nam", "files/" + hash + "/Amp.nam");
+        REQUIRE(loaded);
+        CHECK(loaded->sources[0] == FileSource::Missing);
+        CHECK(!fs::exists(outside));
+    }
+    SUBCASE("a file name that is a parent folder")
+    {
+        const auto loaded = presetWith(realHash, "/gone/..", "files/" + realHash + "/..");
+        REQUIRE(loaded);
+        CHECK(loaded->sources[0] == FileSource::Missing);
+    }
+    SUBCASE("bytes that don't match the hash they're stored under")
+    {
+        const std::string other = hashBytes("other bytes");
+        const auto loaded = presetWith(other, "/gone/Amp.nam", "files/" + other + "/Amp.nam");
+        REQUIRE(loaded);
+        CHECK(loaded->sources[0] == FileSource::Missing);
+        CHECK(!fs::exists(cacheDir() / "presets" / other));
+    }
+    SUBCASE("a well-formed one still loads")
+    {
+        const auto loaded = presetWith(realHash, "/gone/Amp.nam", "files/" + realHash + "/Amp.nam");
+        REQUIRE(loaded);
+        CHECK(loaded->sources[0] == FileSource::Embedded);
     }
 }

@@ -98,6 +98,20 @@ public:
         double energy = 0.0;
         for (float v : fFileChannels[0])
             energy += static_cast<double>(v) * v;
+        // A float WAV can hold anything, NaN, infinity or 1e38 included (a damaged or hostile file): the convolution
+        // would only ever output NaN or infinity. Real IRs peak near 1; past +60 dB the file is taken as damaged.
+        for (const std::vector<float>& channel : fFileChannels)
+        {
+            for (float v : channel)
+            {
+                if (!(std::fabs(v) <= kIrMaxPeak))
+                {
+                    std::fprintf(stderr, "Xythos: can't load IR %s: its samples are damaged\n", path.c_str());
+                    fFileChannels.clear();
+                    return false;
+                }
+            }
+        }
         fNormGain = energy > 0.0 ? static_cast<float>(1.0 / std::sqrt(energy)) : 1.0f;
 
         buildConvolvers();

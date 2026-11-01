@@ -1,0 +1,57 @@
+name: fuzz
+
+# The libFuzzer targets (fuzz/README.md) with ASan and UBSan, for a few minutes each: weekly, and by hand with a
+# chosen time. The quick replay of the seed corpus runs with the tests in every build (build.yml).
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: "300"
+
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submodule cache key
+        id: submodules
+        shell: bash
+        run: echo "key=$(git ls-tree HEAD deps | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .git/modules
+            deps/DPF
+            deps/NeuralAmpModelerCore
+            deps/doctest
+            deps/FFTConvolver
+            deps/miniz
+            deps/xxHash
+            deps/libwebp
+          key: submodules-${{ runner.os }}-${{ steps.submodules.outputs.key }}
+      - name: Fetch submodules
+        shell: bash
+        run: .github/scripts/fetch-submodules.sh
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang libclang-rt-18-dev libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev
+      - name: Configure
+        run: |
+          flags="-fsanitize=address,undefined,fuzzer-no-link -fno-sanitize-recover=undefined -fsanitize-recover=nonnull-attribute"
+          CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DXYTHOS_FUZZ=ON \
+            -DCMAKE_C_FLAGS="$flags" -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build-fuzz --target $(ninja -C build-fuzz -t targets all | grep -o '^xythos-fuzz-[a-z-]*' | sort -u)
+      - name: Fuzz
+        run: fuzz/run_all.sh "${{ github.event.inputs.seconds || '300' }}" build-fuzz
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: |
+            fuzz-work/crashes
+            fuzz-work/*.log

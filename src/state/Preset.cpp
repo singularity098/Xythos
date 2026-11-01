@@ -33,6 +33,36 @@ bool fail(std::string* error, std::string message)
     return false;
 }
 
+// A file or folder name that works on Linux and Windows
+bool validName(const std::string& name)
+{
+    if (name.empty() || name == "." || name == ".." || name.back() == '.')
+        return false;
+    for (const unsigned char c : name)
+    {
+        if (c < 32 || std::string_view("<>:\"/\\|?*").find(static_cast<char>(c)) != std::string_view::npos)
+            return false;
+    }
+    return true;
+}
+
+// A file name that stays in the folder it's put in: no separators, not "." or ".."
+bool isPlainFileName(const std::string& name)
+{
+#ifdef _WIN32
+    constexpr std::string_view kSeparators = "/\\:";
+#else
+    constexpr std::string_view kSeparators = "/";
+#endif
+    return !name.empty() && name != "." && name != ".." && name.find_first_of(kSeparators) == std::string::npos;
+}
+
+// 32 lowercase hex digits, as hashBytes() writes them
+bool isContentHash(const std::string& text)
+{
+    return text.size() == 32 && text.find_first_not_of("0123456789abcdef") == std::string::npos;
+}
+
 std::string fileName(const std::string& path)
 {
     if (const std::optional<ArchivePath> archive = splitArchivePath(path))
@@ -125,7 +155,13 @@ std::optional<Preset> Preset::fromJson(std::string_view text, std::string* error
             return std::nullopt;
         Preset preset;
         preset.chain = std::move(*chain);
-        preset.globals = root.value("globals", std::map<std::string, float>());
+        if (const auto globals = root.find("globals"); globals != root.end() && !globals->is_null())
+        {
+            if (!globals->is_object())
+                throw json::type_error::create(302, "globals isn't an object", nullptr);
+            for (const auto& [symbol, value] : globals->items())
+                preset.globals[symbol] = jsonFloat(value);
+        }
         return preset;
     }
     catch (const json::exception& e)
@@ -214,14 +250,20 @@ std::optional<LoadedPreset> loadPresetFile(const std::string& path,
         if (!file.empty() && !exists(file))
         {
             source = FileSource::Missing;
-            const std::string embedded = archive + "files/" + hash + "/" + fileName(file);
-            if (!hash.empty() && readLibraryFile(embedded))
+            const std::string name = fileName(file);
+            const std::string embedded = archive + "files/" + hash + "/" + name;
+            // Only a real content hash and a plain file name make the path it's extracted to: the preset may come
+            // from anyone, and "../" or an absolute path there would write anywhere. The bytes must match the hash
+            // too, as copies are shared between presets by hash.
+            const std::optional<std::string> bytes =
+                isContentHash(hash) && isPlainFileName(name) ? readLibraryFile(embedded) : std::nullopt;
+            if (bytes && hashBytes(*bytes) == hash)
             {
                 // extracted under the content hash, so presets share copies
-                const fs::path target = cacheDir() / "presets" / hash / pathFromUtf8(fileName(file));
+                const fs::path target = cacheDir() / "presets" / hash / pathFromUtf8(name);
                 std::error_code ec;
                 if (!fs::exists(target, ec))
-                    writeFileAtomic(target, *readLibraryFile(embedded));
+                    writeFileAtomic(target, *bytes);
                 if (fs::exists(target, ec))
                 {
                     block.config["path"] = pathToUtf8(target);
@@ -271,19 +313,6 @@ std::string trimmed(const std::string& text)
     if (first == std::string::npos)
         return {};
     return text.substr(first, text.find_last_not_of(" \t") - first + 1);
-}
-
-// A file or folder name that works on Linux and Windows
-bool validName(const std::string& name)
-{
-    if (name.empty() || name == "." || name == ".." || name.back() == '.')
-        return false;
-    for (const unsigned char c : name)
-    {
-        if (c < 32 || std::string_view("<>:\"/\\|?*").find(static_cast<char>(c)) != std::string_view::npos)
-            return false;
-    }
-    return true;
 }
 
 std::string relativeFolder(const fs::path& dir, const fs::path& folder)

@@ -7,13 +7,26 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cfloat>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace xythos {
+
+// A JSON number as a float. Any number reads, clamped to the float range (get<float>() turns 1e39 into infinity,
+// which saves as null and then doesn't load); a non-number throws json::type_error as get<float>() does.
+inline float jsonFloat(const nlohmann::json& value)
+{
+    const double v = value.get<double>();
+    if (std::isnan(v))
+        return 0.0f;
+    return static_cast<float>(std::clamp(v, -static_cast<double>(FLT_MAX), static_cast<double>(FLT_MAX)));
+}
 
 class BlockRegistry;
 

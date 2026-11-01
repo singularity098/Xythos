@@ -76,7 +76,7 @@ std::optional<ChainState> ChainState::fromJson(std::string_view text, std::strin
             if (const auto params = item.find("params"); params != item.end())
             {
                 for (size_t i = 0; i < params->size() && i < block.params.size(); ++i)
-                    block.params[i] = (*params)[i].get<float>();
+                    block.params[i] = jsonFloat((*params)[i]);
             }
             state.blocks.push_back(std::move(block));
         }

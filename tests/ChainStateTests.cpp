@@ -221,3 +221,15 @@ TEST_CASE("inserting, removing and moving blocks keeps the split consistent")
     CHECK(slots(chain, Section::Pre) == std::vector<int> { 13, 12, 0, 1, 14, 11 });
     CHECK(chain.validate(testing::testRegistry()));
 }
+
+TEST_CASE("numbers past the float range load clamped, so the chain still saves and loads again")
+{
+    const std::optional<ChainState> chain = ChainState::fromJson(
+        R"({"version": 1, "blocks": [{"type": "delay", "slot": 0, "params": [1e300, -1e300, 0.5]}]})");
+    REQUIRE(chain);
+    CHECK(chain->blocks[0].params[0] == FLT_MAX);
+    CHECK(chain->blocks[0].params[1] == -FLT_MAX);
+    const std::optional<ChainState> again = ChainState::fromJson(chain->toJson());
+    REQUIRE(again);
+    CHECK(*again == *chain);
+}

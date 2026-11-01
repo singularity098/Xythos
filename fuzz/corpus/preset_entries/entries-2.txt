@@ -1,0 +1,9 @@
+{"version": 1, "chain": {"version": 2, "blocks": [{"type": "nam", "slot": 0, "params": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "bypass": false, "config": {"path": "/nowhere/amp.nam", "hash": "0123456789abcdef0123456789abcdef", "tone": true}}, {"type": "ir", "slot": 3, "params": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "bypass": false, "config": {"path": "lib.zip!/cabs/4x12.wav", "hash": "0123456789abcdef0123456789abcdef"}}, {"type": "compressor", "slot": 5, "params": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "bypass": false, "config": {}, "branch": 1}, {"type": "chorus", "slot": 7, "params": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "bypass": false, "config": {}, "latched": 3, "image": "mine.png"}], "split": {"begin": 1, "end": 3}, "midi": [{"channel": 0, "cc": 7, "param": 5}]}, "globals": {}}
+--
+files/0123456789abcdef0123456789abcdef/amp.nam
+--
+{}
+--
+files/0123456789abcdef0123456789abcdef/4x12.wav
+--
+{}

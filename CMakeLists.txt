@@ -303,6 +303,7 @@ endif()
 # Tests
 
 option(XYTHOS_BUILD_TESTS "Build unit tests" ON)
+option(XYTHOS_FUZZ "Build the libFuzzer targets (clang; see fuzz/README.md)" OFF)
 if(XYTHOS_BUILD_TESTS)
   enable_testing()
   add_executable(xythos-tests
@@ -372,4 +373,7 @@ if(XYTHOS_BUILD_TESTS)
     XYTHOS_PEDAL_IMAGES="${CMAKE_CURRENT_SOURCE_DIR}/resources/pedals"
     XYTHOS_AMP_IMAGES="${CMAKE_CURRENT_SOURCE_DIR}/resources/amps")
   add_test(NAME xythos-tests COMMAND xythos-tests)
+
+  # Fuzz targets: xythos-fuzz-replay (a test) always; libFuzzer binaries with XYTHOS_FUZZ=ON (fuzz/README.md)
+  include(fuzz/CMakeLists.txt)
 endif()
