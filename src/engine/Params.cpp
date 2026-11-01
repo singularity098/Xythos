@@ -138,6 +138,8 @@ const GlobalParamSpec kNewestParams[] = {
     { "Looper Wave 7",       "looper_wave7",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
     { "Looper Wave 8",       "looper_wave8",    "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
     { "Looper Wake",         "looper_wake",     "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle | kParamFlagHidden },
+    { "Looper Export",       "looper_export",   "",    0.0f,   8388607.0f, 0.0f, kParamFlagInteger | kParamFlagHidden },
+    { "Looper Exported",     "looper_exported", "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
 };
 static_assert(sizeof(kNewestParams) / sizeof(kNewestParams[0]) == kParamCount - kParamSlotLatchEnd);
 

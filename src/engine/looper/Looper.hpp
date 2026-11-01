@@ -160,6 +160,7 @@ public:
         fBuffer[1] = right;
     }
 
+    uint32_t length() const { return fLength; }
     bool hasMemory() const { return fBuffer[0] != nullptr && fBuffer[1] != nullptr; }
 
     // Loopers saved before Count In existed stay in Free mode (LooperBlock's config); the global looper has it

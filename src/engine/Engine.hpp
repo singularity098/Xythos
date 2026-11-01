@@ -107,6 +107,10 @@ public:
     // has it.
     bool serviceLooper();
 
+    // Non-RT. The loop as a float WAV (encodeWav()), or "" if there's none to save: no memory, empty, or being
+    // recorded (it's only read while it plays or is stopped, when the audio thread doesn't write it)
+    std::string looperWav() const;
+
     // Any thread. Whether branch B of a split runs on a second core (default on). Takes effect from the next
     // setChain() if no worker thread was started yet.
     void setParallelProcessing(bool enabled) { fParallel.store(enabled, std::memory_order_relaxed); }
@@ -245,6 +249,8 @@ private:
     std::atomic<bool> fLooperMemoryReady { false };
     std::atomic<bool> fLooperWanted { false }; // a footswitch was pressed before the memory came
     bool fLooperAttached = false;              // audio thread
+    std::atomic<uint32_t> fLooperLength { 0 }; // the loop's length and state, for looperWav()
+    std::atomic<int> fLooperState { 0 };
     Meter fInMeters[2], fOutMeters[2];
 
     std::vector<float> fWork[2], fDry[2], fScratch[2];

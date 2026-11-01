@@ -130,6 +130,11 @@ enum LaterParam : uint32_t {
     // loop's memory (23 MB) in this run only. Owner, 2026-11-01: not in instances that never use the looper, and
     // the looper is ephemeral: nothing about it survives a save, so a reopened project starts without the memory.
     kParamLooperWake = kParamLooperCellEnd,
+    // saving the loop to a file (owner, 2026-11-01): the UI bumps Looper Export (input, hidden, a counter); the DSP
+    // writes the loop to looperExportFile() and answers in Looper Exported (output, hidden: counter * 2 + 1 if it
+    // wrote it, counter * 2 if there was nothing to write)
+    kParamLooperExport,
+    kParamLooperExported,
 
     kParamCount
 };

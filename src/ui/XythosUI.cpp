@@ -35,6 +35,7 @@
 #include "state/Ink.hpp"
 #include "state/Library.hpp"
 #include "state/LibraryScanner.hpp"
+#include "state/AudioFile.hpp"
 #include "state/Paths.hpp"
 #include "state/Preset.hpp"
 #include "state/Settings.hpp"
@@ -203,6 +204,7 @@ enum class Hit {
     Slider,       // index = host parameter; horizontal drag over the rect
     MetroPanel,   // open/close the metronome panel
     LooperPanel,  // open/close the looper page
+    LooperSave,   // save the loop to a file; index 0 WAV, 1 FLAC
     MetroAccent,  // index = beat: cycle accent / normal / soft / mute
     MetroGrouping, // next beat grouping
     MetroResetAccents,
@@ -332,7 +334,7 @@ enum class PhotoKind { Cab, Pedal, Amp };
 enum class Dialog { None, AddBlock, Settings, Menu, SavePreset, Presets, Images, CabImages, InkPicker };
 
 // What a file picked in the file browser is for
-enum class BrowseTarget { AddBlock, NamDir, IrDir, OpenPreset, ExportPreset, Locate, AddImage };
+enum class BrowseTarget { AddBlock, NamDir, IrDir, OpenPreset, ExportPreset, Locate, AddImage, SaveLoop };
 
 // The folders a library list showed before and after the current one (back and forward)
 struct LibraryHistory {
@@ -716,6 +718,8 @@ protected:
         fParams[index] = value;
         if (index == kParamLooperState || (index >= kParamLooperCellBase && index < kParamLooperCellEnd))
             looperOutput(index, value);
+        if (index == kParamLooperExported)
+            finishLoopSave(static_cast<uint32_t>(value + 0.5f));
         // automation and MIDI change values in the host; presets and undo need them too
         if (isSlotParam(index))
             syncChainValue(index, value);
@@ -781,6 +785,9 @@ protected:
         }
         case BrowseTarget::Locate:
             locateFile(fLocateIndex, filename);
+            return;
+        case BrowseTarget::SaveLoop:
+            requestLoopSave(filename);
             return;
         case BrowseTarget::AddImage:
             addImageFile(filename);
@@ -1526,6 +1533,20 @@ protected:
             repaint();
             return true;
 
+        case Hit::LooperSave: {
+            fLooperSaveFlac = hit->index == 1;
+            fBrowseTarget = BrowseTarget::SaveLoop;
+            FileBrowserOptions options;
+            options.saving = true;
+            options.title = fLooperSaveFlac ? "Save the loop as FLAC" : "Save the loop as WAV";
+            char name[64];
+            std::snprintf(name, sizeof(name), "Loop %.0f BPM.%s", looperValue(kLooperParamBpm),
+                          fLooperSaveFlac ? "flac" : "wav");
+            options.defaultName = looperInt(kLooperParamMode) == 0 ? name : (fLooperSaveFlac ? "Loop.flac" : "Loop.wav");
+            openFileBrowser(options);
+            return true;
+        }
+
         case Hit::LooperPanel:
             // the looper page takes the chain's place, as the tuner and the metronome do: one of them at a time
             fLooperPanel = !fLooperPanel;
@@ -1876,6 +1897,11 @@ protected:
         if (fParams[kParamLooperWake] >= 0.5f
             && std::chrono::steady_clock::now() - fLooperWakeAt > std::chrono::milliseconds(250))
             setValue(kParamLooperWake, 0.0f);
+        if (fLooperSavePending && std::chrono::steady_clock::now() - fLooperSaveAt > std::chrono::seconds(5))
+        {
+            fLooperSavePending = false;
+            showToast("The loop couldn't be saved: the plugin didn't answer.");
+        }
         if (fRetiredLooper)
         {
             // a project's Looper block: its settings go to the global looper and the chain goes without it
@@ -5174,6 +5200,13 @@ private:
             return { "Tap Tempo",
                      "Click this button in time with the music, four times or more, and the metronome takes the "
                      "tempo you tap. The T key does the same while the metronome panel is open." };
+        case Hit::LooperSave:
+            return { hit.index == 1 ? "Save as FLAC" : "Save as WAV",
+                     hit.index == 1
+                         ? "Saves the loop, all its passes as you hear them, to a FLAC file: 24-bit, lossless, about "
+                           "half the size of a WAV. Use it to keep an idea, or to take it into your DAW."
+                         : "Saves the loop, all its passes as you hear them, to a 24-bit WAV file, which any DAW or "
+                           "audio program opens. Use it to keep an idea, or to take it into your DAW." };
         case Hit::LooperPanel:
             return { "Looper",
                      "Opens the looper in place of the chain. It records what you hear, after the whole rig, and "
@@ -6524,6 +6557,57 @@ private:
             fLooperWave[cell.lane][cell.column] = static_cast<uint8_t>(cell.peak);
     }
 
+    // A file picked to save the loop to: the DSP writes the loop to its export file (Looper Export), and
+    // finishLoopSave() encodes it there when the answer comes
+    void requestLoopSave(const char* filename)
+    {
+        std::string path = filename;
+        const std::string extension = fLooperSaveFlac ? ".flac" : ".wav";
+        if (!lowerCase(path).ends_with(extension))
+            path += extension;
+        if (fInstanceId == 0)
+        {
+            showToast("The loop couldn't be saved: the plugin hasn't reported in yet.");
+            return;
+        }
+        fLooperSavePath = path;
+        fLooperSaveRequest = (static_cast<uint32_t>(fParams[kParamLooperExport] + 0.5f) + 1) % 8388607u;
+        if (fLooperSaveRequest == 0)
+            fLooperSaveRequest = 1;
+        fLooperSavePending = true;
+        fLooperSaveAt = std::chrono::steady_clock::now();
+        setValue(kParamLooperExport, static_cast<float>(fLooperSaveRequest));
+    }
+
+    void finishLoopSave(uint32_t answer)
+    {
+        if (!fLooperSavePending || answer / 2 != fLooperSaveRequest)
+            return;
+        fLooperSavePending = false;
+        const std::filesystem::path temp = looperExportFile(fInstanceId);
+        const std::optional<std::string> bytes = answer % 2 == 1 ? readFile(temp) : std::nullopt;
+        std::error_code error;
+        std::filesystem::remove(temp, error);
+        const std::optional<StereoAudio> audio = bytes ? decodeWav(*bytes) : std::nullopt;
+        if (!audio || audio->left.empty())
+        {
+            showToast("There's no loop to save: record one, and save it while it plays or is stopped.");
+            return;
+        }
+        const size_t frames = audio->left.size();
+        const std::string encoded = fLooperSaveFlac
+            ? encodeFlac(audio->left.data(), audio->right.data(), frames, audio->sampleRate)
+            : encodeWav(audio->left.data(), audio->right.data(), frames, audio->sampleRate, false);
+        const std::filesystem::path target = pathFromUtf8(fLooperSavePath);
+        if (!writeFileAtomic(target, encoded))
+        {
+            showToast("The loop couldn't be saved to " + shortenHomePath(fLooperSavePath) + ".");
+            return;
+        }
+        showToast("Saved the loop (" + looperTime(static_cast<float>(frames) / audio->sampleRate) + ") to "
+                  + shortenHomePath(fLooperSavePath) + ".");
+    }
+
     float looperValue(int param) const { return fParams[looperParam(param)]; }
     int looperInt(int param) const { return static_cast<int>(std::lround(looperValue(param))); }
 
@@ -6624,6 +6708,22 @@ private:
         // --- transport and state
         const float px = panel.x + 16.0f, right = panel.x + panel.w - 16.0f;
         label(px, panel.y + 24.0f, "Looper", theme::text, 16.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        // saving the loop to a file, while it plays or is stopped (not while it's being recorded)
+        {
+            const bool canSave = (state == LooperState::Playing || state == LooperState::Stopped) && !fLooperSavePending;
+            const Rect flac { right - 104.0f, panel.y + 10.0f, 104.0f, 28.0f };
+            const Rect wav { flac.x - 108.0f, flac.y, 100.0f, 28.0f };
+            if (!canSave)
+                globalAlpha(0.35f);
+            drawButton(wav, "Save WAV…", false, theme::accent, Hit::LooperSave, 0);
+            drawButton(flac, "Save FLAC…", false, theme::accent, Hit::LooperSave, 1);
+            globalAlpha(1.0f);
+            if (!canSave)
+            {
+                fHits.pop_back();
+                fHits.pop_back();
+            }
+        }
         const float ty = panel.y + 44.0f, th = 64.0f;
         const bool recording = state == LooperState::Recording || state == LooperState::Overdubbing
                             || state == LooperState::CountIn;
@@ -9961,6 +10061,12 @@ private:
     TapTempo fLooperTap; // the looper's Tap, timed as the DSP times it
     bool fLooperPanel = false; // the looper page is open (in the chain's place)
     std::chrono::steady_clock::time_point fLooperWakeAt {}; // when Looper Wake was pulsed
+    // saving the loop: the format and file picked, and the request the DSP's answer must match
+    bool fLooperSaveFlac = false;
+    std::string fLooperSavePath;
+    uint32_t fLooperSaveRequest = 0;
+    bool fLooperSavePending = false;
+    std::chrono::steady_clock::time_point fLooperSaveAt {};
     std::optional<LooperSettings> fRetiredLooper; // a project's Looper block's settings, for the global looper
     // the loop's waveform as the DSP streams it (looperOutput()): a lane per pass, of the loop of generation
     // fLooperGeneration (-1 before the state arrives)

@@ -189,6 +189,7 @@ add_library(xythos-engine STATIC
   src/state/Ink.cpp
   src/state/Library.cpp
   src/state/LibraryScanner.cpp
+  src/state/AudioFile.cpp
   src/state/Paths.cpp
   src/state/Preset.cpp
   src/state/Settings.cpp
@@ -319,6 +320,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/EngineTests.cpp
     tests/FileLookTests.cpp
     tests/LooperTests.cpp
+    tests/AudioFileTests.cpp
     tests/InkTests.cpp
     tests/IrBlockTests.cpp
     tests/LibraryTests.cpp

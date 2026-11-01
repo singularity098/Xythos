@@ -4,7 +4,9 @@
 #include "DistrhoPlugin.hpp"
 
 #include "engine/Engine.hpp"
+#include "state/AudioFile.hpp"
 #include "state/ChainExchange.hpp"
+#include "state/Paths.hpp"
 #include "state/Settings.hpp"
 
 #include <algorithm>
@@ -314,12 +316,24 @@ private:
     void watchExchange()
     {
         uint32_t seenRevision = 0;
+        uint32_t seenExport = 0;
         auto lastRebuild = std::chrono::steady_clock::now() - std::chrono::seconds(10);
         while (!fStopExchange)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             // the looper's memory, the first time it's wanted (not reserved in instances that never use it)
             fEngine.serviceLooper();
+            // the UI asks to save the loop: it goes to a file the UI then encodes as the user chose
+            const auto exportRequest = static_cast<uint32_t>(fEngine.getParameter(kParamLooperExport));
+            if (exportRequest != seenExport)
+            {
+                seenExport = exportRequest;
+                const std::string wav = fEngine.looperWav();
+                std::error_code error;
+                std::filesystem::create_directories(cacheDir(), error);
+                const bool ok = !wav.empty() && writeFileAtomic(looperExportFile(fInstanceId), wav);
+                fEngine.setParameter(kParamLooperExported, static_cast<float>(exportRequest * 2 + (ok ? 1 : 0)));
+            }
             // at most once a second, in case a block keeps breaking
             const auto now = std::chrono::steady_clock::now();
             if (now - lastRebuild >= std::chrono::seconds(1) && fEngine.takeChainFault())

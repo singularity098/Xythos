@@ -3,6 +3,8 @@
 
 #include "engine/Engine.hpp"
 
+#include "state/AudioFile.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -378,6 +380,17 @@ bool Engine::serviceLooper()
     return true;
 }
 
+std::string Engine::looperWav() const
+{
+    if (!fLooperMemoryReady.load(std::memory_order_acquire))
+        return {};
+    const auto state = static_cast<LooperState>(fLooperState.load(std::memory_order_acquire));
+    const uint32_t length = fLooperLength.load(std::memory_order_relaxed);
+    if ((state != LooperState::Playing && state != LooperState::Stopped) || length == 0)
+        return {};
+    return encodeWav(fLooperMemory[0].get(), fLooperMemory[1].get(), length, static_cast<uint32_t>(fSampleRate), true);
+}
+
 void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t frames)
 {
     if (!fLooperAttached && param(kParamLooperWake) >= 0.5f)
@@ -413,6 +426,8 @@ void Engine::processLooper(float* const* work, uint32_t& numChannels, uint32_t f
     fLooper.process(work, numChannels, frames, fBlockClick[0].data());
 
     const LooperReport report = fLooper.report();
+    fLooperLength.store(fLooper.length(), std::memory_order_relaxed);
+    fLooperState.store(static_cast<int>(report.state), std::memory_order_release);
     fParams[kParamLooperState].store(report.encodeState(), std::memory_order_relaxed);
     fParams[kParamLooperPosition].store(report.position, std::memory_order_relaxed);
     fParams[kParamLooperCount].store(static_cast<float>(report.count), std::memory_order_relaxed);
