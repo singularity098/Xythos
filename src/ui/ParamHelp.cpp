@@ -2387,14 +2387,13 @@ constexpr GlobalHelp kGlobalHelp[] = {
       "The pitch of A4 that the tuner tunes to. 440 Hz is standard; change it only to play along with something "
       "tuned differently." },
     { "tuner_strobe",
-      "Vernier: two rings of ticks around the note. The outer ring spans 50 cents either way, to find the note; the "
-      "inner one only 10, so the last few cents are easy to see, and its dot lights up once you're that close. Tune "
-      "until both dots sit at the top, in green. Chevrons: a strobe of three rows of arrows that point and march the "
-      "way to tune, right when you're flat and left when you're sharp, faster the further out you are. As you get "
-      "close they flatten, and in tune they stand still as upright green bars. The lower rows are the octaves above "
-      "the note." },
+      "Arc: a needle of lightning from the bottom up to a scale of 50 cents either way, left when you're flat and "
+      "right when you're sharp. The further off you are, the wilder it crackles; it calms as you tune in, and in "
+      "tune it's a straight green beam on the centre mark. Aurora: a strobe of three curtains of light, the note "
+      "and the two octaves above it, drifting right when you're sharp and left when you're flat, faster the further "
+      "out you are. In tune they hang still and turn green." },
     { "tuner_chevrons",
-      "No longer used: it picked between the tuner's two strobe views, and only Chevrons is left." },
+      "No longer used: it picked between the tuner's two strobe views, and only one is left." },
     { "tuner_runes",
       "The runes view: a row of 21 glyphs, 5 cents each. Glyphs light up from the centre toward the side you're "
       "off, left when you're flat and right when you're sharp; tune until only the centre one is lit, in green." },

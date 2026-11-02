@@ -73,7 +73,7 @@ enum LaterParam : uint32_t {
     kParamTuner,            // on/off
     kParamTunerMute,        // mute the guitar while the tuner is on
     kParamTunerReference,   // A4 in Hz
-    kParamTunerStrobe,      // hidden, UI only: the strobe view (Chevrons) instead of the needle (Vernier)
+    kParamTunerStrobe,      // hidden, UI only: the strobe view (Aurora) instead of the needle (Arc)
     kParamTunerFrequency,   // output: detected frequency in Hz, 0 when there's no clear note
     kParamTunerClarity,     // output: 0..1
 

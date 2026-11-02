@@ -1539,7 +1539,7 @@ protected:
 
         case Hit::SetValue:
             setValue(static_cast<uint32_t>(hit->index), hit->value);
-            // the tuner's views: Runes is over Vernier/Chevrons (Tuner Strobe)
+            // the tuner's views: Runes is over Arc/Aurora (Tuner Strobe)
             if (hit->index == static_cast<int>(kParamTunerStrobe))
                 setValue(kParamTunerRunes, 0.0f);
             return true;
@@ -2020,7 +2020,7 @@ protected:
         if (fLooperPanel || looperReport().state != LooperState::Empty)
             repaint();
 
-        // the tuner animates (needle easing, strobe)
+        // the tuner animates (needle easing, strobe, the Arc's bolt)
         const float dt = std::min(0.1f, std::chrono::duration<float>(now - fLastIdle).count());
         fLastIdle = now;
         if (fParams[kParamTuner] >= 0.5f)
@@ -2029,6 +2029,9 @@ protected:
             fNeedleCents += (target - fNeedleCents) * std::min(1.0f, dt * 12.0f);
             for (int row = 0; row < 3; ++row)
                 fStrobePhase[row] += target * 5.0f * static_cast<float>(1 << row) * dt;
+            // the bolt writhes faster the further off the pitch
+            fTunerClock += dt;
+            fArcPhase += dt * (6.0 + std::min(std::fabs(fNeedleCents), 50.0f) / 50.0f * 10.0);
             repaint();
         }
 
@@ -6532,15 +6535,15 @@ private:
         // header: view, mute, reference pitch
         const float hy = panel.y + 16.0f;
         label(panel.x + 16.0f, hy + 14.0f, "Tuner", theme::text, 16.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        // the view: Vernier (the default; owner, 2026-11-01; was Runes), Runes, or the Chevrons strobe. Runes is a
-        // parameter of its own, over Tuner Strobe (Vernier or Chevrons); choosing a view sets the other (onMouse(),
-        // SetValue). Tuner Chevrons is unused since Hive was removed (owner, 2026-11-01).
+        // the view: the Arc needle (the default), Runes, or the Aurora strobe (owner, 2026-11-02: Arc and Aurora
+        // replaced the Vernier and Chevrons). Runes is a parameter of its own, over Tuner Strobe (Arc or Aurora);
+        // choosing a view sets the other (onMouse(), SetValue). Tuner Chevrons is unused since Hive was removed.
         const bool runes = fParams[kParamTunerRunes] >= 0.5f;
         const bool strobe = !runes && fParams[kParamTunerStrobe] >= 0.5f;
-        drawValueButton({ panel.x + 96.0f, hy, 84.0f, 28.0f }, "Vernier", !runes && !strobe, Hit::SetValue,
+        drawValueButton({ panel.x + 96.0f, hy, 84.0f, 28.0f }, "Arc", !runes && !strobe, Hit::SetValue,
                         kParamTunerStrobe, 0);
         drawValueButton({ panel.x + 184.0f, hy, 84.0f, 28.0f }, "Runes", runes, Hit::SetValue, kParamTunerRunes, 1);
-        drawValueButton({ panel.x + 272.0f, hy, 84.0f, 28.0f }, "Chevrons", strobe, Hit::SetValue, kParamTunerStrobe,
+        drawValueButton({ panel.x + 272.0f, hy, 84.0f, 28.0f }, "Aurora", strobe, Hit::SetValue, kParamTunerStrobe,
                         1);
         drawButton({ panel.x + 376.0f, hy, 76.0f, 28.0f }, "Mute", fParams[kParamTunerMute] >= 0.5f, theme::accent,
                    Hit::Toggle, kParamTunerMute);
@@ -6553,28 +6556,24 @@ private:
         drawValueButton({ rx - 168.0f, hy, 28.0f, 28.0f }, "−", false, Hit::Step, kParamTunerReference, -1.0f);
         fHits.push_back({ { rx - 136.0f, hy, 104.0f, 28.0f }, Hit::Knob, static_cast<int>(kParamTunerReference) });
 
-        // the Vernier draws the note inside its rings; the other views have it above them
-        const float cx = panel.x + panel.w / 2;
-        if (!runes && !strobe)
+        // the Arc and Aurora place the note themselves; Runes has it above
+        const Rect view { panel.x + 16.0f, panel.y + 56.0f, panel.w - 32.0f, panel.h - 72.0f };
+        if (!runes)
         {
-            drawVernier({ panel.x + 16.0f, panel.y + 56.0f, panel.w - 32.0f, panel.h - 72.0f }, active, inTune, stateColor);
+            if (strobe)
+                drawAurora(view, active, inTune, stateColor);
+            else
+                drawArc(view, active, inTune, stateColor);
             return;
         }
+        const float cx = panel.x + panel.w / 2;
         const float noteY = panel.y + 56.0f + (panel.h - 56.0f) * 0.28f;
         drawTunerReadout(cx, noteY, 84.0f, active, inTune, stateColor);
 
         const float viewTop = noteY + 104.0f;
         const float viewHeight = panel.y + panel.h - 16.0f - viewTop;
-        if (viewHeight < 40.0f)
-            return;
-        if (runes)
+        if (viewHeight >= 40.0f)
             drawRunes({ panel.x + 16.0f, viewTop, panel.w - 32.0f, viewHeight }, active, inTune, stateColor);
-        else
-        {
-            const float w = std::min(panel.w - 32.0f, 640.0f);
-            const Rect r { cx - w / 2, viewTop, w, std::min(viewHeight, 160.0f) };
-            drawChevrons(r, active, inTune);
-        }
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -7228,120 +7227,227 @@ private:
             drawSideKnob(cx, knobY, looperParam(kLooperParamLatency), "Latency");
     }
 
-    // The note (its name in the state colour, the octave beside it), the cents and frequency under it, and the
-    // guidance under those, from `noteY` down; everything scales with the note's size
+    // The guidance under the note
+    const char* tunerStatus(bool active, bool inTune) const
+    {
+        return !active ? "Play a note" : inTune ? "In tune" : fTunerCents < 0 ? "Tune up ↑" : "Tune down ↓";
+    }
+
+    // The note's name in the state colour with its octave beside it, centred on (cx, noteY); a dash with no note
+    void drawTunerNote(float cx, float noteY, float size, bool active, const Color& stateColor)
+    {
+        const float k = size / 84.0f;
+        if (fTunerNote < 0)
+        {
+            label(cx, noteY, "—", theme::textDim, size, ALIGN_CENTER | ALIGN_MIDDLE);
+            return;
+        }
+        fontSize(size);
+        DGL_NAMESPACE::Rectangle<float> bounds;
+        const char* name = kNoteNames[((fTunerNote % 12) + 12) % 12];
+        textBounds(0, 0, name, nullptr, bounds);
+        const float w = bounds.getWidth();
+        label(cx - 10.0f * k, noteY, name, active ? stateColor : theme::textDim, size, ALIGN_CENTER | ALIGN_MIDDLE);
+        char octave[16];
+        std::snprintf(octave, sizeof(octave), "%d", fTunerNote / 12 - 1);
+        label(cx - 10.0f * k + w / 2 + 4.0f * k, noteY + 22.0f * k, octave, theme::textDim, 26.0f * k,
+              ALIGN_LEFT | ALIGN_MIDDLE);
+    }
+
+    // The note, the cents and frequency under it, and the guidance under those, from `noteY` down; everything
+    // scales with the note's size
     void drawTunerReadout(float cx, float noteY, float size, bool active, bool inTune, const Color& stateColor)
     {
         const float k = size / 84.0f;
         const float cents = active ? fTunerCents : 0.0f;
+        drawTunerNote(cx, noteY, size, active, stateColor);
         if (fTunerNote >= 0)
         {
-            fontSize(size);
-            DGL_NAMESPACE::Rectangle<float> bounds;
-            const char* name = kNoteNames[((fTunerNote % 12) + 12) % 12];
-            textBounds(0, 0, name, nullptr, bounds);
-            const float w = bounds.getWidth();
-            label(cx - 10.0f * k, noteY, name, active ? stateColor : theme::textDim, size, ALIGN_CENTER | ALIGN_MIDDLE);
-            char octave[16];
-            std::snprintf(octave, sizeof(octave), "%d", fTunerNote / 12 - 1);
-            label(cx - 10.0f * k + w / 2 + 4.0f * k, noteY + 22.0f * k, octave, theme::textDim, 26.0f * k,
-                  ALIGN_LEFT | ALIGN_MIDDLE);
-
             char info[64];
             std::snprintf(info, sizeof(info), "%s%.1f ¢     %.2f Hz", cents >= 0 ? "+" : "−", std::fabs(cents),
                           fTunerFrequency);
             label(cx, noteY + std::max(58.0f * k, 40.0f), info, theme::text, std::max(15.0f * k, 12.0f),
                   ALIGN_CENTER | ALIGN_MIDDLE);
         }
-        else
-        {
-            label(cx, noteY, "—", theme::textDim, size, ALIGN_CENTER | ALIGN_MIDDLE);
-        }
-        const char* status = !active ? "Play a note" : inTune ? "In tune" : cents < 0 ? "Tune up ↑" : "Tune down ↓";
-        label(cx, noteY + std::max(82.0f * k, 60.0f), status, stateColor, std::max(14.0f * k, 12.0f),
-              ALIGN_CENTER | ALIGN_MIDDLE);
+        label(cx, noteY + std::max(82.0f * k, 60.0f), tunerStatus(active, inTune), stateColor,
+              std::max(14.0f * k, 12.0f), ALIGN_CENTER | ALIGN_MIDDLE);
     }
 
-    // Needle: Vernier (owner, 2026-10-31; needle concept 8 of the second round of tuner mockups). Two rings of ticks
-    // around the note, like a vernier scale: the outer one spans ±50 cents to find the note, with a dot riding outside
-    // it; the inner one only ±10 (owner, 2026-11-01; was ±5, too touchy), so the last cents are easy to see, its dot
-    // and arc lit once the pitch is within 10 cents.
-    // A green glow inside in tune.
-    void drawVernier(const Rect& r, bool active, bool inTune, const Color& color)
+    // Additive blending, for glows: what's drawn adds light to what's under it (the window's alpha stays)
+    void beginAdditive() { nvgGlobalCompositeBlendFuncSeparate(getContext(), NVG_ONE, NVG_ONE, NVG_ZERO, NVG_ONE); }
+    void endAdditive() { nvgGlobalCompositeOperation(getContext(), NVG_SOURCE_OVER); }
+
+    // A colour gradients can take: the highlight with a window gradient on becomes the paint's colour at (x, y)
+    Color plainColor(const Color& color, float x, float y) const
     {
-        const float outer = std::clamp((r.h - 24.0f) / 2.0f, 70.0f, 180.0f);
-        const float s = outer / 132.0f;
-        const float inner = 96.0f * s;
-        const float cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 4.0f; // the dot and labels above and below
+        if (!isInk(color))
+            return color;
+        Color c = highlightAt(x, y);
+        c.alpha = color.alpha;
+        return c;
+    }
+
+    // A soft round glow, drawn additively by the caller
+    void glowAt(float x, float y, float radius, const Color& color, float alpha)
+    {
+        beginPath();
+        circle(x, y, radius);
+        fillPaint(radialGradient(x, y, 0.0f, radius, color.withAlpha(alpha), color.withAlpha(0.0f)));
+        fill();
+    }
+
+    // 0..1 from two integers, for the Arc's noise
+    static float tunerHash(uint32_t a, uint32_t b)
+    {
+        uint32_t h = a * 0x9E3779B1u ^ (b + 0x7F4A7C15u) * 0x85EBCA77u;
+        h ^= h >> 15;
+        h *= 0x2C1B3C6Du;
+        h ^= h >> 12;
+        h *= 0x297A2D39u;
+        h ^= h >> 15;
+        return static_cast<float>(h >> 8) / 16777216.0f;
+    }
+
+    // Smooth noise, -1..1: value i drifts from one random target to the next as t passes each whole number
+    static float tunerNoise(uint32_t i, double t)
+    {
+        const double f = std::floor(t);
+        const float u = static_cast<float>(t - f), s = u * u * (3.0f - 2.0f * u);
+        const auto k = static_cast<uint32_t>(static_cast<int64_t>(f));
+        return (tunerHash(i, k) * (1.0f - s) + tunerHash(i, k + 1) * s) * 2.0f - 1.0f;
+    }
+
+    // Needle: Arc (owner, 2026-11-02; needle concept 4 of the third round of tuner mockups, turned to point up). A
+    // bolt of lightning is the needle: from a pivot at the bottom to a ±50 cent scale arc. The further off the pitch,
+    // the more it writhes and forks; it calms as the pitch comes in, and in tune it is a straight green beam on the
+    // centre mark. The bolt moves all the time while a note plays, at the frame rate (fArcPhase; the owner asked for
+    // it, an exception to "no animation"); its shape is smooth noise, so it flows rather than jumps.
+    void drawArc(const Rect& r, bool active, bool inTune, const Color& color)
+    {
         constexpr float kPi = static_cast<float>(M_PI);
-        constexpr float span = 0.8f * kPi, up = -kPi / 2;
+        constexpr float span = 0.8f, up = -kPi / 2;
+        const float R = std::clamp(std::min(r.h - 56.0f, r.w / 2 - 70.0f), 120.0f, 400.0f);
+        const float s = R / 228.0f;
+        const float px = r.x + r.w / 2, py = r.y + r.h - 20.0f;
         const float cents = active ? fNeedleCents : 0.0f;
         const Color unlit(1.0f, 1.0f, 1.0f, 0.16f);
-        constexpr float kVernierFine = 10.0f; // the inner ring's range in cents
+        auto angle = [&](float v) { return up + std::clamp(v, -50.0f, 50.0f) / 50.0f * span; };
 
-        auto ticks = [&](float radius, float range, float step, float major, float zone) {
-            const int count = static_cast<int>(std::lround(2.0f * range / step));
-            for (int i = 0; i <= count; ++i)
-            {
-                const float v = -range + static_cast<float>(i) * step;
-                const float a = up + v / range * span;
-                const bool isMajor = std::fabs(std::remainder(v, major)) < 1e-3f;
-                const bool centre = std::fabs(v) < 1e-3f;
-                const float length = (centre ? 14.0f : isMajor ? 9.0f : 5.0f) * std::max(s, 0.7f);
-                beginPath();
-                moveTo(cx + std::cos(a) * radius, cy + std::sin(a) * radius);
-                lineTo(cx + std::cos(a) * (radius - length), cy + std::sin(a) * (radius - length));
-                strokeColor(centre ? theme::good.withAlpha(0.6f)
-                                   : std::fabs(v) <= zone ? theme::good.withAlpha(0.45f) : unlit);
-                strokeWidth(isMajor ? 1.4f : 1.0f);
-                stroke();
-            }
-        };
-        ticks(outer, 50.0f, 2.0f, 10.0f, kTunerInTuneCents);
-        ticks(inner, kVernierFine, 0.5f, 2.0f, 0.0f);
-
-        if (inTune)
+        // the scale: a hairline arc, a tick every 5 cents, labels at ±25 and ±50, the centre green
+        beginPath();
+        arc(px, py, R + 6.0f, angle(-50.0f), angle(50.0f), CW);
+        strokeColor(Color(1.0f, 1.0f, 1.0f, 0.10f));
+        strokeWidth(1.0f);
+        stroke();
+        for (int v = -50; v <= 50; v += 5)
         {
+            const float a = angle(static_cast<float>(v));
+            const bool big = v % 25 == 0;
+            const float length = (v == 0 ? 14.0f : big ? 10.0f : 5.0f) * std::max(s, 0.8f);
             beginPath();
-            circle(cx, cy, inner - 10.0f);
-            fillPaint(radialGradient(cx, cy, 0.0f, inner - 10.0f, theme::good.withAlpha(0.2f), theme::good.withAlpha(0.0f)));
-            fill();
+            moveTo(px + std::cos(a) * (R + 6.0f), py + std::sin(a) * (R + 6.0f));
+            lineTo(px + std::cos(a) * (R + 6.0f + length), py + std::sin(a) * (R + 6.0f + length));
+            strokeColor(v == 0 ? theme::good.withAlpha(inTune ? 1.0f : 0.55f) : unlit);
+            strokeWidth(big ? 1.3f : 1.0f);
+            stroke();
+            if (big && v != 0)
+                label(px + std::cos(a) * (R + 30.0f * std::max(s, 0.8f)), py + std::sin(a) * (R + 30.0f * std::max(s, 0.8f)),
+                      v > 0 ? (v == 25 ? "+25" : "+50") : (v == -25 ? "−25" : "−50"), theme::textDim, 11.0f,
+                      ALIGN_CENTER | ALIGN_MIDDLE);
         }
 
-        // the coarse dot, outside the outer ring
         if (active)
         {
-            const float a = up + std::clamp(cents, -50.0f, 50.0f) / 50.0f * span;
-            beginPath();
-            circle(cx + std::cos(a) * (outer + 8.0f), cy + std::sin(a) * (outer + 8.0f), 4.0f);
-            fillColor(color);
-            fill();
+            const float a = angle(cents);
+            const float tx = px + std::cos(a) * (R - 4.0f), ty = py + std::sin(a) * (R - 4.0f);
+            const float off = std::min(std::fabs(cents), 50.0f) / 50.0f;
+            const float rough = inTune ? 0.0f : (std::pow(off, 0.8f) * 26.0f + 0.6f) * s;
+            const double t = fArcPhase;
+
+            // a bolt from (x0, y0) to (x1, y1): n + 1 points pushed sideways by noise, most in the middle
+            constexpr int kMain = 26, kFork = 8;
+            auto bolt = [&](uint32_t seed, float amp, float x0, float y0, float x1, float y1, int n, float* xs,
+                            float* ys) {
+                const float nx = -(y1 - y0), ny = x1 - x0, length = std::max(1e-3f, std::hypot(nx, ny));
+                for (int i = 0; i <= n; ++i)
+                {
+                    const float u = static_cast<float>(i) / static_cast<float>(n);
+                    const uint32_t id = seed * 50u + static_cast<uint32_t>(i);
+                    const float o = (tunerNoise(id, t + seed * 0.3) + 0.35f * tunerNoise(id + 500u, t * 2.3))
+                                    * amp * std::sin(u * kPi);
+                    xs[i] = x0 + (x1 - x0) * u + nx / length * o;
+                    ys[i] = y0 + (y1 - y0) * u + ny / length * o;
+                }
+            };
+            // a polyline with a glow: two wide faint passes under a fine bright one
+            auto glowLine = [&](const float* xs, const float* ys, int n, float width, float strength) {
+                for (const auto& [w, alpha] : { std::pair { 7.0f, 0.06f }, { 3.2f, 0.16f }, { 1.0f, 0.9f } })
+                {
+                    beginPath();
+                    moveTo(xs[0], ys[0]);
+                    for (int i = 1; i <= n; ++i)
+                        lineTo(xs[i], ys[i]);
+                    strokeColor(color.withAlpha(alpha * strength));
+                    strokeWidth(width * w);
+                    stroke();
+                }
+            };
+
+            float mx[kMain + 1], my[kMain + 1];
+            bolt(1, rough, px + std::cos(a) * 12.0f, py + std::sin(a) * 12.0f, tx, ty, kMain, mx, my);
+            lineJoin(ROUND);
+            beginAdditive();
+            glowLine(mx, my, kMain, 1.3f, 1.0f);
+            // forks fade in and out on their own clocks, fewer and fainter close to pitch
+            for (int f = 0; f < 3; ++f)
+            {
+                const double p = fTunerClock * (1.6 + f * 0.4) + f / 3.0;
+                const float life = std::sin(static_cast<float>(p - std::floor(p)) * kPi);
+                const float strength = life * std::min(1.0f, rough / (10.0f * s));
+                if (strength < 0.02f)
+                    continue;
+                const auto sd = static_cast<uint32_t>(static_cast<int64_t>(std::floor(p)) * 7 + f * 13);
+                const int at = 6 + static_cast<int>(tunerHash(sd, 1) * 16.0f);
+                const float fx = mx[at], fy = my[at];
+                const float len = 24.0f * s + rough * 2.2f * tunerHash(sd, 2);
+                const float fa = std::atan2(ty - fy, tx - fx) + (tunerHash(sd, 3) - 0.5f) * 1.8f;
+                float bx[kFork + 1], by[kFork + 1];
+                bolt(static_cast<uint32_t>(f + 2), rough * 0.4f, fx, fy, fx + std::cos(fa) * len,
+                     fy + std::sin(fa) * len, kFork, bx, by);
+                glowLine(bx, by, kFork, 0.8f, 0.7f * strength);
+            }
+            glowAt(tx, ty, 32.0f * s, plainColor(color, tx, ty), 0.5f);
+            glowAt(px, py, 28.0f * s, plainColor(color, px, py), 0.35f);
+            endAdditive();
+            lineJoin(MITER);
         }
-        // the fine dot and its arc from the top, outside the inner ring, lit within its range
-        const bool fine = active && std::fabs(cents) <= kVernierFine;
-        const float a = up + std::clamp(cents, -kVernierFine, kVernierFine) / kVernierFine * span;
-        if (fine && std::fabs(a - up) > 1e-3f)
-        {
-            beginPath();
-            arc(cx, cy, inner + 6.0f, std::min(up, a), std::max(up, a), CW);
-            strokeColor(color);
-            strokeWidth(2.0f);
-            stroke();
-        }
+
+        // the pivot
         beginPath();
-        circle(cx + std::cos(a) * (inner + 6.0f), cy + std::sin(a) * (inner + 6.0f), 3.5f);
-        fillColor(fine ? color : unlit);
+        circle(px, py, 10.0f);
+        NanoVG::fillColor(Color(4, 4, 8));
+        fill();
+        strokeColor(Color(1.0f, 1.0f, 1.0f, 0.45f));
+        strokeWidth(1.0f);
+        stroke();
+        beginPath();
+        circle(px, py, 3.0f);
+        fillColor(active ? color : unlit);
         fill();
 
-        // the rings' ranges, at their lower right ends
-        const float end = up + span;
-        label(cx + std::cos(end) * (outer + 20.0f), cy + std::sin(end) * (outer + 20.0f), "±50", theme::textDim, 11.0f,
-              ALIGN_CENTER | ALIGN_MIDDLE);
-        label(cx + std::cos(end) * (inner - 22.0f * s), cy + std::sin(end) * (inner - 22.0f * s), "±10",
-              theme::textDim, 11.0f, ALIGN_CENTER | ALIGN_MIDDLE);
-
-        // the note inside; the guidance in the gap at the bottom of the rings
-        drawTunerReadout(cx, cy - 10.0f * s, std::clamp(58.0f * s, 40.0f, 72.0f), active, inTune, color);
+        // the note bottom left, the cents and guidance bottom right, clear of the bolt
+        const float size = std::clamp(62.0f * s, 44.0f, 84.0f);
+        const float side = R * 0.86f + 10.0f;
+        drawTunerNote(px - side, py - 46.0f * s, size, active, color);
+        const float ix = std::min(px + side, r.x + r.w - 90.0f);
+        if (fTunerNote >= 0)
+        {
+            char info[64];
+            std::snprintf(info, sizeof(info), "%s%.1f ¢     %.2f Hz", fTunerCents >= 0 ? "+" : "−", std::fabs(fTunerCents),
+                          fTunerFrequency);
+            label(ix, py - 30.0f, info, theme::text, 14.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+        }
+        label(ix, py - 6.0f, tunerStatus(active, inTune), color, 14.0f, ALIGN_CENTER | ALIGN_MIDDLE);
     }
 
     // Runes (owner, 2026-10-31; concept 8 of the tuner mockups): a row of 21 crystal glyphs, 5 cents each over ±50,
@@ -7429,49 +7535,76 @@ private:
             label(x0 + i * pitch, ly, text, theme::textDim, 11.0f, ALIGN_CENTER | ALIGN_MIDDLE);
     }
 
-    // Strobe: Chevrons (owner, 2026-10-31; strobe concept 5 of the second round of tuner mockups). Three rows of
-    // chevrons, the fundamental and two octaves, that point and march the way to tune (right when flat, left when
-    // sharp), at a speed proportional to the error. Within about 12 cents they flatten, and in tune they stand as
-    // upright green bars.
-    void drawChevrons(const Rect& r, bool active, bool inTune)
+    // Strobe: Aurora (owner, 2026-11-02; strobe concept 6 of the third round of tuner mockups). Three curtains of
+    // light over a horizon, the fundamental and two octaves (fStrobePhase), drift right when sharp and left when flat,
+    // faster the further off; in tune they hang still and turn green. Each ray takes the highlight's colour where it
+    // stands (the window's gradient), drawn additively. The note is under the horizon.
+    void drawAurora(const Rect& r, bool active, bool inTune, const Color& stateColor)
     {
-        fillRect(r.x, r.y, r.w, r.h, theme::panelFill, 10.0f);
+        const float horizon = r.y + std::max(120.0f, r.h * 0.6f);
+        const float sx = std::max(r.w, 200.0f) / 520.0f, sy = (horizon - r.y) / 238.0f;
+        const float x0 = r.x, x1 = r.x + r.w, fade = 60.0f * sx;
+        const float step = std::max(3.0f, r.w / 240.0f);
+        constexpr float kTau = 2.0f * static_cast<float>(M_PI);
+        struct Layer { float alpha, wave, amp; };
+        constexpr Layer kLayers[3] = { { 0.9f, 150.0f, 26.0f }, { 0.7f, 92.0f, 18.0f }, { 0.5f, 58.0f, 12.0f } };
+
+        scissor(r.x, r.y, r.w, horizon - r.y + 1.0f);
+        beginAdditive();
+        for (int k = 0; k < 3; ++k)
+        {
+            const Layer& L = kLayers[k];
+            const float kf = static_cast<float>(k);
+            const float ph = fStrobePhase[k] * 0.22f * sx, wave = L.wave * sx, amp = L.amp * sy;
+            const float base = horizon - (32.0f + 14.0f * kf) * sy;
+            auto bottom = [&](float x) {
+                return base + std::sin((x - ph) / wave * kTau) * amp
+                       + std::sin((x - ph * 0.6f) / (wave * 2.3f) * kTau + kf) * amp * 0.6f;
+            };
+            for (float x = x0; x <= x1; x += step)
+            {
+                const float edge = std::clamp(std::min(x - x0, x1 - x) / fade, 0.0f, 1.0f);
+                if (edge <= 0.0f)
+                    continue;
+                const float y = bottom(x);
+                const float h = (70.0f + 50.0f * (0.5f + 0.5f * std::sin((x - ph) / (wave * 1.7f) * kTau + 2.0f + kf))) * sy;
+                const float fold = 0.35f + 0.65f * std::pow(0.5f + 0.5f * std::sin((x - ph * 1.3f) / (9.0f * sx) + kf * 2.0f), 3.0f);
+                const Color c = !active ? Color(0.33f, 0.33f, 0.36f) : inTune ? theme::good : highlightAt(x, y - h * 0.3f);
+                beginPath();
+                moveTo(x, y);
+                lineTo(x, y - h);
+                strokePaint(linearGradient(x, y, x, y - h, c.withAlpha(0.45f * L.alpha * edge * fold), c.withAlpha(0.0f)));
+                strokeWidth(step);
+                stroke();
+            }
+            // the curtain's lower edge
+            beginPath();
+            for (float x = x0; x <= x1; x += 4.0f)
+            {
+                if (x == x0)
+                    moveTo(x, bottom(x));
+                else
+                    lineTo(x, bottom(x));
+            }
+            const Color edgeColor = !active ? Color(0.33f, 0.33f, 0.36f) : inTune ? theme::good : theme::accent;
+            strokeColor(edgeColor.withAlpha(0.5f * L.alpha));
+            strokeWidth(1.0f);
+            stroke();
+        }
+        endAdditive();
+        resetScissor();
+
         beginPath();
-        roundedRect(r.x + 0.5f, r.y + 0.5f, r.w - 1.0f, r.h - 1.0f, 10.0f);
+        moveTo(x0 + fade * 0.5f, horizon);
+        lineTo(x1 - fade * 0.5f, horizon);
         strokeColor(Color(1.0f, 1.0f, 1.0f, 0.18f));
         strokeWidth(1.0f);
         stroke();
-        scissor(r.x + 1.0f, r.y + 1.0f, r.w - 2.0f, r.h - 2.0f);
 
-        const Color color = !active ? Color(1.0f, 1.0f, 1.0f, 0.18f) : inTune ? theme::good : theme::accent;
-        const float bend = active ? std::clamp(fNeedleCents / 12.0f, -1.0f, 1.0f) * 9.0f : 0.0f;
-        const float rowHeight = r.h / 3.0f;
-        constexpr float kFade = 60.0f; // the rows fade out toward the window's ends
-        lineJoin(ROUND);
-        for (int row = 0; row < 3; ++row)
-        {
-            const float yc = r.y + rowHeight * (static_cast<float>(row) + 0.5f);
-            const float h = rowHeight * 0.36f;
-            const float period = 34.0f - 6.0f * static_cast<float>(row);
-            const float offset = std::fmod(std::fmod(-fStrobePhase[row] * 0.32f, period) + period, period);
-            for (float x = r.x - period + offset; x < r.x + r.w + period; x += period)
-            {
-                const float edge = std::clamp(std::min(x - r.x, r.x + r.w - x) / kFade, 0.0f, 1.0f);
-                if (edge <= 0.0f)
-                    continue;
-                globalAlpha(edge * (1.0f - 0.22f * static_cast<float>(row)));
-                beginPath();
-                moveTo(x, yc - h);
-                lineTo(x - bend, yc);
-                lineTo(x, yc + h);
-                strokeColor(color);
-                strokeWidth(1.6f);
-                stroke();
-            }
-        }
-        globalAlpha(1.0f);
-        lineJoin(MITER);
-        resetScissor();
+        // the note under the horizon, as big as the room below allows
+        const float room = r.y + r.h - horizon;
+        const float size = std::clamp((room - 24.0f) / 1.5f, 40.0f, 84.0f);
+        drawTunerReadout(r.x + r.w / 2, horizon + 14.0f + size / 2, size, active, inTune, stateColor);
     }
 
     void layoutChain()
@@ -10306,6 +10439,8 @@ private:
     float fTunerCents = 0.0f;
     float fNeedleCents = 0.0f;
     float fStrobePhase[3] {};
+    double fTunerClock = 0.0; // seconds while the tuner is open, for the Arc's forks
+    double fArcPhase = 0.0;   // the Arc's noise time: runs faster the further off the pitch
     int fTunerNote = -1; // MIDI note
     std::chrono::steady_clock::time_point fTunerSeenAt;
     std::chrono::steady_clock::time_point fLastIdle = std::chrono::steady_clock::now();

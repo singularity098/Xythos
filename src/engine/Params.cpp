@@ -102,7 +102,7 @@ constexpr GlobalParamSpec kToolParams[kParamSlotLatchBase - kParamMergeBalance] 
 
 // Added after the latches, in index order
 const GlobalParamSpec kNewestParams[] = {
-    // the tuner's Runes view (owner, 2026-10-31; the default until 2026-11-01, when the Vernier took over), over Tuner Strobe
+    // the tuner's Runes view (owner, 2026-10-31; the default until 2026-11-01, when a needle took over), over Tuner Strobe
     { "Tuner Runes",         "tuner_runes",    "",    0.0f,   1.0f,   0.0f,   kParamFlagToggle | kParamFlagHidden },
     // picked the Chevrons strobe over Hive (owner, 2026-10-31); unused since Hive was removed (owner, 2026-11-01), kept
     // because host parameter indices never go away
