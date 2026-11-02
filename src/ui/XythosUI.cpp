@@ -9,6 +9,7 @@
 #include "BackgroundImage.hpp"
 #include "LogoImage.hpp"
 #include "BlockImages.hpp"
+#include "RasterImage.hpp"
 #include "WebpImage.hpp"
 #include "FileLooks.hpp"
 #include "FontData.hpp"
@@ -3793,13 +3794,10 @@ private:
     // JPEG), into `img`; left as it was (invalid) if it doesn't decode.
     void loadImage(NanoImage& img, const unsigned char* data, unsigned int size)
     {
-        if (!isWebp(data, size))
-        {
-            img = createImageFromMemory(data, size, IMAGE_GENERATE_MIPMAPS);
-            return;
-        }
+        // WebP through libwebp, PNG and JPEG through a current stb_image (RasterImage.cpp): never NanoVG's own
+        // createImageFromMemory(), whose bundled 2016 stb_image a crafted JPEG can make write out of bounds
         RgbaImage decoded;
-        if (decodeWebp(data, size, decoded))
+        if (isWebp(data, size) ? decodeWebp(data, size, decoded) : decodeRaster(data, size, decoded))
             img = createImageFromRGBA(decoded.width, decoded.height, decoded.pixels.data(), IMAGE_GENERATE_MIPMAPS);
     }
 
@@ -4073,7 +4071,7 @@ private:
                                                       ledLensColourImage(), ledBloomImage(), ledBloomColourImage(),
                                                       ledGlassImage() };
             for (int i = 0; i < kLedLayers; ++i)
-                fLedImages[i] = createImageFromMemory(images[i].data, images[i].size, IMAGE_GENERATE_MIPMAPS);
+                loadImage(fLedImages[i], images[i].data, images[i].size);
         }
         for (const NanoImage& img : fLedImages)
             if (!img.isValid())
@@ -4139,7 +4137,7 @@ private:
         {
             fKnobImagesTried = true;
             const auto load = [this](NanoImage& img, BuiltinImage data) {
-                img = createImageFromMemory(data.data, data.size, IMAGE_GENERATE_MIPMAPS);
+                loadImage(img, data.data, data.size);
             };
             load(fKnobImage, knobImage());
             load(fKnobPointer, knobPointerImage());

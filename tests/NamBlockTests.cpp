@@ -7,7 +7,11 @@
 #include "engine/Engine.hpp"
 #include "engine/blocks/NamBlock.hpp"
 
+#include "NAM/get_dsp.h"
+
 #include <cmath>
+#include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -263,4 +267,24 @@ TEST_CASE("NAM block removes DC from the model output")
     for (float v : silence)
         mean += v;
     CHECK(std::fabs(mean / kBuffer) < 1e-4);
+}
+
+TEST_CASE("a model file with fewer weights than its config needs fails to load instead of reading past them")
+{
+    // patches/nam/: NAM Core's loaders read weights unchecked; a short file read past the end of the vector
+    for (const char* name : { "lstm.nam", "wavenet.nam", "slimmable_wavenet.nam" })
+    {
+        CAPTURE(name);
+        std::ifstream in(exampleModel(name));
+        nlohmann::json config = nlohmann::json::parse(in);
+        auto& weights = config.at("weights");
+        REQUIRE(weights.size() > 2);
+        for (const size_t keep : { weights.size() / 2, weights.size() - 1, size_t(0) })
+        {
+            CAPTURE(keep);
+            nlohmann::json shorter = config;
+            shorter["weights"] = nlohmann::json(std::vector<float>(weights.begin(), weights.begin() + keep));
+            CHECK_THROWS_AS(nam::get_dsp(shorter), std::runtime_error);
+        }
+    }
 }

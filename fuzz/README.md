@@ -15,7 +15,7 @@ hands the plugin, and the audio engine under any sequence of host events.
 | `ir_wav` | an IR file loaded by the IR block, then audio through it | no crash; a loaded IR outputs finite audio |
 | `nam_model` | a `.nam` file: `describeNamFile()`, then loaded by the NAM block and run | no crash |
 | `image` | the WebP decoder, the user image check | no crash; pixel buffer matches the size |
-| `stb_image` | DPF's stb_image, which shows users' PNG and JPEG images | no crash, no out-of-bounds access |
+| `stb_image` | `decodeRaster()`: the PNG and JPEG decoder (a current stb_image) the UI shows images with | no crash, no out-of-bounds access; sizes within the limits |
 | `engine` | the engine: random chains of any blocks (splits, bypasses, MIDI maps), then buffers of any size and content, parameter changes, MIDI CCs, tempo and transport, chain changes, fault rebuilds, the looper's memory | never a non-finite output sample; never writes past the buffers |
 | `text_edit` | text field editing, any keys on any (even invalid UTF-8) text | cursor and selection stay in the text, on character boundaries |
 | `ink` | hex colours, HSV, colour names, the gradient texture, home path shortening | hex and HSV round trips; lightened colours are light enough |

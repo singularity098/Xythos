@@ -45,28 +45,33 @@ endif()
 # ---------------------------------------------------------------------------------------------------------------------
 # Dependencies
 
-# Our patches to DPF (patches/dpf/, see the README there), applied to the submodule's checkout once. They only change
-# Linux code (guarded, so applying them on macOS is harmless), and a Windows checkout may have CRLF line endings that
-# a patch wouldn't apply to.
-if(NOT WIN32)
-  find_package(Git REQUIRED)
-  file(GLOB XYTHOS_DPF_PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches/dpf/*.patch)
-endif()
-list(SORT XYTHOS_DPF_PATCHES)
-foreach(patch ${XYTHOS_DPF_PATCHES})
-  execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${patch}
-                  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/deps/DPF
-                  RESULT_VARIABLE XYTHOS_PATCH_APPLIED OUTPUT_QUIET ERROR_QUIET)
-  if(NOT XYTHOS_PATCH_APPLIED EQUAL 0)
-    execute_process(COMMAND ${GIT_EXECUTABLE} apply ${patch}
-                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/deps/DPF
-                    RESULT_VARIABLE XYTHOS_PATCH_FAILED)
-    if(NOT XYTHOS_PATCH_FAILED EQUAL 0)
-      message(FATAL_ERROR "Can't apply ${patch} to deps/DPF (was the submodule updated?)")
+# Our patches to submodules (patches/<name>/, see the README there), applied to the submodule's checkout once, in
+# name order, skipping ones already applied. --ignore-whitespace lets them apply to a Windows checkout with CRLF line
+# endings. NAM Core's (bounds-checked weight loading) is a safety fix and applies everywhere; DPF's only change Linux
+# code (guarded, so applying them on macOS is harmless) and are skipped on Windows, as before.
+find_package(Git REQUIRED)
+function(xythos_apply_patches submodule patch_dir)
+  file(GLOB patches ${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_dir}/*.patch)
+  list(SORT patches)
+  foreach(patch ${patches})
+    execute_process(COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace --reverse --check ${patch}
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/deps/${submodule}
+                    RESULT_VARIABLE applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT applied EQUAL 0)
+      execute_process(COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace ${patch}
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/deps/${submodule}
+                      RESULT_VARIABLE failed)
+      if(NOT failed EQUAL 0)
+        message(FATAL_ERROR "Can't apply ${patch} to deps/${submodule} (was the submodule updated?)")
+      endif()
+      message(STATUS "Applied ${patch}")
     endif()
-    message(STATUS "Applied ${patch}")
-  endif()
-endforeach()
+  endforeach()
+endfunction()
+if(NOT WIN32)
+  xythos_apply_patches(DPF dpf)
+endif()
+xythos_apply_patches(NeuralAmpModelerCore nam)
 
 add_subdirectory(deps/DPF)
 
@@ -283,6 +288,7 @@ dpf_add_plugin(xythos
     src/ui/ParamHelp.cpp
     src/ui/PedalFaces.cpp
     src/ui/TextEdit.cpp
+    src/ui/RasterImage.cpp
     src/ui/Vsync.cpp
     src/ui/WebpImage.cpp
     src/ui/XythosUI.cpp)
@@ -294,6 +300,8 @@ if(MSVC)
   target_include_directories(dgl-system-libs-definitions BEFORE INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/khronos)
 endif()
 target_link_libraries(xythos PUBLIC xythos-engine webpdecoder)
+# stb_image (deps/stb, header only) for PNG and JPEG, in RasterImage.cpp
+target_include_directories(xythos SYSTEM PUBLIC deps/stb)
 if(WIN32)
   # ShellExecute (Fretbored link); IFileOpenDialog (folder picker); WinHTTP (update check)
   target_link_libraries(xythos PUBLIC shell32 ole32 winhttp)
@@ -336,6 +344,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/PolyTrackingTests.cpp
     tests/PresetTests.cpp
     tests/RealTrackingTests.cpp
+    tests/RasterImageTests.cpp
     tests/ReverbBlockTests.cpp
     tests/SettingsTests.cpp
     tests/SynthTests.cpp
@@ -351,15 +360,19 @@ if(XYTHOS_BUILD_TESTS)
     src/ui/BlockGlyphs.cpp
     src/ui/FileLooks.cpp
     src/ui/HttpGet.cpp
+    src/ui/KnobImages.cpp
+    src/ui/LedImages.cpp
     src/ui/LogoImage.cpp
     src/ui/ParamHelp.cpp
     src/ui/PedalFaces.cpp
+    src/ui/RasterImage.cpp
     src/ui/TextEdit.cpp
     src/ui/WebpImage.cpp)
   if(WIN32)
     target_link_libraries(xythos-tests PRIVATE winhttp)
   endif()
   target_include_directories(xythos-tests PRIVATE tests deps/doctest src)
+  target_include_directories(xythos-tests SYSTEM PRIVATE deps/stb)
   if(APPLE)
     # the tests run on the machine that builds them: only its own architecture
     set_target_properties(xythos-tests PROPERTIES OSX_ARCHITECTURES ${CMAKE_HOST_SYSTEM_PROCESSOR})

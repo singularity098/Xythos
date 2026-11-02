@@ -12,16 +12,15 @@ set(XYTHOS_FUZZ_TARGETS
   FuzzText.cpp
   FuzzWebp.cpp)
 list(TRANSFORM XYTHOS_FUZZ_TARGETS PREPEND ${CMAKE_CURRENT_LIST_DIR}/)
-# DPF's stb_image isn't ours to fix warnings in
-set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/FuzzStbImage.cpp PROPERTIES COMPILE_OPTIONS
-  $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>)
-set(XYTHOS_FUZZ_UI_SOURCES ${CMAKE_SOURCE_DIR}/src/ui/TextEdit.cpp ${CMAKE_SOURCE_DIR}/src/ui/WebpImage.cpp)
+set(XYTHOS_FUZZ_UI_SOURCES ${CMAKE_SOURCE_DIR}/src/ui/RasterImage.cpp ${CMAKE_SOURCE_DIR}/src/ui/TextEdit.cpp
+  ${CMAKE_SOURCE_DIR}/src/ui/WebpImage.cpp)
 
 # Every target in one binary, without libFuzzer: replays the seed corpus and deterministic mutations of it (a test),
 # and reproduces a crash file anywhere (`xythos-fuzz-replay --target <name> <file>`)
 add_executable(xythos-fuzz-replay ${CMAKE_CURRENT_LIST_DIR}/ReplayMain.cpp ${CMAKE_CURRENT_LIST_DIR}/FuzzSupport.cpp
   ${XYTHOS_FUZZ_TARGETS} ${XYTHOS_FUZZ_UI_SOURCES})
 target_include_directories(xythos-fuzz-replay PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(xythos-fuzz-replay SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/deps/stb)
 target_link_libraries(xythos-fuzz-replay PRIVATE xythos-engine webpdecoder)
 target_compile_options(xythos-fuzz-replay PRIVATE ${XYTHOS_WARNINGS})
 if(APPLE)
@@ -41,6 +40,7 @@ if(XYTHOS_FUZZ)
       string(REPLACE "_" "-" target ${target})
       add_executable(${target} ${source} ${CMAKE_CURRENT_LIST_DIR}/FuzzSupport.cpp ${XYTHOS_FUZZ_UI_SOURCES})
       target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_LIST_DIR})
+      target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/deps/stb)
       target_link_libraries(${target} PRIVATE xythos-engine webpdecoder)
       # one target per binary: the others in the same file are registered but never run
       target_compile_definitions(${target} PRIVATE XYTHOS_FUZZ_LIBFUZZER XYTHOS_FUZZ_ONLY="${name}")

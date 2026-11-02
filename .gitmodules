@@ -5,6 +5,7 @@
 [submodule "deps/NeuralAmpModelerCore"]
 	path = deps/NeuralAmpModelerCore
 	url = https://github.com/sdatkinson/NeuralAmpModelerCore
+	ignore = dirty
 [submodule "deps/doctest"]
 	path = deps/doctest
 	url = https://github.com/doctest/doctest
@@ -20,3 +21,6 @@
 [submodule "deps/libwebp"]
 	path = deps/libwebp
 	url = https://github.com/webmproject/libwebp
+[submodule "deps/stb"]
+	path = deps/stb
+	url = https://github.com/nothings/stb

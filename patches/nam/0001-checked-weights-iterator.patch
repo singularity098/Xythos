@@ -1,0 +1,418 @@
+diff --git a/NAM/conv1d.cpp b/NAM/conv1d.cpp
+index 3c43e18..df51f47 100644
+--- a/NAM/conv1d.cpp
++++ b/NAM/conv1d.cpp
+@@ -1,3 +1,4 @@
++#include "weights_iterator.h"
+ #include "conv1d.h"
+ #include "compiler.h"
+ #include <cassert>
+@@ -8,7 +9,7 @@ namespace nam
+ {
+ // Conv1D =====================================================================
+ 
+-void Conv1D::set_weights_(std::vector<float>::iterator& weights)
++void Conv1D::set_weights_(nam::WeightsIterator& weights)
+ {
+   _has_cached_prewarm_state = false;
+   if (this->_is_depthwise)
+@@ -119,7 +120,7 @@ void Conv1D::set_size_(const int in_channels, const int out_channels, const int
+ 
+ void Conv1D::set_size_and_weights_(const int in_channels, const int out_channels, const int kernel_size,
+                                    const int _dilation, const bool do_bias, const int groups,
+-                                   std::vector<float>::iterator& weights)
++                                   nam::WeightsIterator& weights)
+ {
+   this->set_size_(in_channels, out_channels, kernel_size, do_bias, _dilation, groups);
+   this->set_weights_(weights);
+diff --git a/NAM/conv1d.h b/NAM/conv1d.h
+index 7c0a880..c565fd1 100644
+--- a/NAM/conv1d.h
++++ b/NAM/conv1d.h
+@@ -2,6 +2,7 @@
+ 
+ #include <Eigen/Dense>
+ #include <vector>
++#include "weights_iterator.h"
+ #include "ring_buffer.h"
+ 
+ namespace nam
+@@ -38,7 +39,7 @@ public:
+ 
+   /// \brief Set the parameters (weights) of this module
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& weights);
++  void set_weights_(nam::WeightsIterator& weights);
+ 
+   /// \brief Set the size parameters of the convolution
+   /// \param in_channels Number of input channels
+@@ -59,7 +60,7 @@ public:
+   /// \param groups Number of groups for grouped convolution
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+   void set_size_and_weights_(const int in_channels, const int out_channels, const int kernel_size, const int _dilation,
+-                             const bool do_bias, const int groups, std::vector<float>::iterator& weights);
++                             const bool do_bias, const int groups, nam::WeightsIterator& weights);
+ 
+   /// \brief Reset the ring buffer and pre-allocate output buffer
+   /// \param maxBufferSize Maximum buffer size for output buffer and to size ring buffer
+diff --git a/NAM/convnet.cpp b/NAM/convnet.cpp
+index 329caf6..9c6cb94 100644
+--- a/NAM/convnet.cpp
++++ b/NAM/convnet.cpp
+@@ -7,11 +7,12 @@
+ #include <unordered_map>
+ #include <unordered_set>
+ 
++#include "weights_iterator.h"
+ #include "dsp.h"
+ #include "registry.h"
+ #include "convnet.h"
+ 
+-nam::convnet::BatchNorm::BatchNorm(const int dim, std::vector<float>::iterator& weights)
++nam::convnet::BatchNorm::BatchNorm(const int dim, nam::WeightsIterator& weights)
+ {
+   // Extract from param buffer
+   Eigen::VectorXf running_mean(dim);
+@@ -50,7 +51,7 @@ void nam::convnet::BatchNorm::process_(Eigen::MatrixXf& x, const long i_start, c
+ void nam::convnet::ConvNetBlock::set_weights_(const int in_channels, const int out_channels, const int _dilation,
+                                               const bool batchnorm,
+                                               const activations::ActivationConfig& activation_config, const int groups,
+-                                              std::vector<float>::iterator& weights)
++                                              nam::WeightsIterator& weights)
+ {
+   this->_batchnorm = batchnorm;
+   // HACK 2 kernel
+@@ -130,7 +131,7 @@ long nam::convnet::ConvNetBlock::get_out_channels() const
+   return this->conv.get_out_channels();
+ }
+ 
+-nam::convnet::_Head::_Head(const int in_channels, const int out_channels, std::vector<float>::iterator& weights)
++nam::convnet::_Head::_Head(const int in_channels, const int out_channels, nam::WeightsIterator& weights)
+ {
+   // Weights are stored row-major: first row (output 0), then row 1 (output 1), etc.
+   // For each output channel: [w0, w1, ..., w_{in_channels-1}]
+@@ -181,7 +182,7 @@ nam::convnet::ConvNet::ConvNet(const int in_channels, const int out_channels, co
+ {
+   this->_verify_weights(channels, dilations, batchnorm, weights.size());
+   this->_blocks.resize(dilations.size());
+-  std::vector<float>::iterator it = weights.begin();
++  nam::WeightsIterator it(weights);
+   // First block takes in_channels input, subsequent blocks take channels input
+   for (size_t i = 0; i < dilations.size(); i++)
+     this->_blocks[i].set_weights_(
+diff --git a/NAM/convnet.h b/NAM/convnet.h
+index 394389e..17708a2 100644
+--- a/NAM/convnet.h
++++ b/NAM/convnet.h
+@@ -9,6 +9,7 @@
+ 
+ #include <Eigen/Dense>
+ 
++#include "weights_iterator.h"
+ #include "activations.h"
+ #include "conv1d.h"
+ #include "dsp.h"
+@@ -32,7 +33,7 @@ public:
+   /// \brief Constructor with weights
+   /// \param dim Dimension of the input
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  BatchNorm(const int dim, std::vector<float>::iterator& weights);
++  BatchNorm(const int dim, nam::WeightsIterator& weights);
+ 
+   /// \brief Process input in-place
+   /// \param input Input matrix to process
+@@ -69,7 +70,7 @@ public:
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+   void set_weights_(const int in_channels, const int out_channels, const int _dilation, const bool batchnorm,
+                     const activations::ActivationConfig& activation_config, const int groups,
+-                    std::vector<float>::iterator& weights);
++                    nam::WeightsIterator& weights);
+ 
+   /// \brief Resize buffers to handle maxBufferSize frames
+   /// \param maxBufferSize Maximum number of frames to process in a single call
+@@ -109,7 +110,7 @@ class _Head
+ {
+ public:
+   _Head() {};
+-  _Head(const int in_channels, const int out_channels, std::vector<float>::iterator& weights);
++  _Head(const int in_channels, const int out_channels, nam::WeightsIterator& weights);
+   void process_(const Eigen::MatrixXf& input, Eigen::MatrixXf& output, const long i_start, const long i_end) const;
+ 
+ private:
+diff --git a/NAM/dsp.cpp b/NAM/dsp.cpp
+index dc6449e..c109fbe 100644
+--- a/NAM/dsp.cpp
++++ b/NAM/dsp.cpp
+@@ -8,6 +8,7 @@
+ #include <unordered_map>
+ #include <unordered_set>
+ 
++#include "weights_iterator.h"
+ #include "dsp.h"
+ #define tanh_impl_ std::tanh
+ // #define tanh_impl_ fast_tanh_
+@@ -360,7 +361,7 @@ void nam::Conv1x1::SetMaxBufferSize(const int maxBufferSize)
+   _output.resize(get_out_channels(), maxBufferSize);
+ }
+ 
+-void nam::Conv1x1::set_weights_(std::vector<float>::iterator& weights)
++void nam::Conv1x1::set_weights_(nam::WeightsIterator& weights)
+ {
+   if (this->_is_depthwise)
+   {
+diff --git a/NAM/dsp.h b/NAM/dsp.h
+index d632852..65b6935 100644
+--- a/NAM/dsp.h
++++ b/NAM/dsp.h
+@@ -10,6 +10,7 @@
+ 
+ #include <Eigen/Dense>
+ 
++#include "weights_iterator.h"
+ #include "activations.h"
+ #include "compiler.h"
+ #include "json.hpp"
+@@ -309,7 +310,7 @@ public:
+ 
+   /// \brief Set the parameters (weights) of this module
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& weights);
++  void set_weights_(nam::WeightsIterator& weights);
+ 
+   /// \brief Process input and return output matrix
+   ///
+diff --git a/NAM/film.h b/NAM/film.h
+index 62e318d..246d295 100644
+--- a/NAM/film.h
++++ b/NAM/film.h
+@@ -4,6 +4,7 @@
+ #include <cassert>
+ #include <vector>
+ 
++#include "weights_iterator.h"
+ #include "compiler.h"
+ #include "dsp.h"
+ 
+@@ -53,7 +54,7 @@ public:
+ 
+   /// \brief Set the parameters (weights) of this module
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& weights) { _cond_to_scale_shift.set_weights_(weights); }
++  void set_weights_(nam::WeightsIterator& weights) { _cond_to_scale_shift.set_weights_(weights); }
+ 
+   /// \brief Get the condition dimension
+   /// \return Size of the conditioning input
+diff --git a/NAM/lstm.cpp b/NAM/lstm.cpp
+index 6fb8bfe..bf709a1 100644
+--- a/NAM/lstm.cpp
++++ b/NAM/lstm.cpp
+@@ -3,10 +3,11 @@
+ #include <vector>
+ #include <memory>
+ 
++#include "weights_iterator.h"
+ #include "registry.h"
+ #include "lstm.h"
+ 
+-nam::lstm::LSTMCell::LSTMCell(const int input_size, const int hidden_size, std::vector<float>::iterator& weights)
++nam::lstm::LSTMCell::LSTMCell(const int input_size, const int hidden_size, nam::WeightsIterator& weights)
+ {
+   // Resize arrays
+   this->_w.resize(4 * hidden_size, input_size + hidden_size);
+@@ -75,7 +76,7 @@ nam::lstm::LSTM::LSTM(const int in_channels, const int out_channels, const int n
+   this->_input.resize(input_size);
+   this->_output.resize(out_channels);
+ 
+-  std::vector<float>::iterator it = weights.begin();
++  nam::WeightsIterator it(weights);
+   for (int i = 0; i < num_layers; i++)
+     this->_layers.push_back(LSTMCell(i == 0 ? input_size : hidden_size, hidden_size, it));
+ 
+diff --git a/NAM/lstm.h b/NAM/lstm.h
+index 92a80b9..72af4af 100644
+--- a/NAM/lstm.h
++++ b/NAM/lstm.h
+@@ -7,6 +7,7 @@
+ 
+ #include <Eigen/Dense>
+ 
++#include "weights_iterator.h"
+ #include "dsp.h"
+ 
+ namespace nam
+@@ -21,7 +22,7 @@ public:
+   /// \param input_size Size of the input vector
+   /// \param hidden_size Size of the hidden state
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  LSTMCell(const int input_size, const int hidden_size, std::vector<float>::iterator& weights);
++  LSTMCell(const int input_size, const int hidden_size, nam::WeightsIterator& weights);
+ 
+   /// \brief Get the current hidden state
+   /// \return A non-owning view of the hidden state (the tail of the concatenated input/hidden vector).
+diff --git a/NAM/wavenet/detail.h b/NAM/wavenet/detail.h
+index c7b06e1..63a2956 100644
+--- a/NAM/wavenet/detail.h
++++ b/NAM/wavenet/detail.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include "../weights_iterator.h"
+ #include "params.h"
+ 
+ #include <memory>
+@@ -160,7 +161,7 @@ public:
+ 
+   /// \brief Set the parameters (weights) of this module
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& weights);
++  void set_weights_(nam::WeightsIterator& weights);
+ 
+   /// \brief Process a block of frames
+   ///
+@@ -330,7 +331,7 @@ public:
+ 
+   /// \brief Set the parameters (weights) of this module
+   /// \param it Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& it);
++  void set_weights_(nam::WeightsIterator& it);
+ 
+   /// \brief Get the "zero-indexed" receptive field
+   ///
+@@ -372,7 +373,7 @@ class Head
+ public:
+   explicit Head(const HeadParams& params);
+ 
+-  void set_weights_(std::vector<float>::iterator& weights);
++  void set_weights_(nam::WeightsIterator& weights);
+   void SetMaxBufferSize(int maxBufferSize);
+   long receptive_field() const;
+   int in_channels() const { return _in_channels; }
+diff --git a/NAM/wavenet/model.cpp b/NAM/wavenet/model.cpp
+index 2d56cc6..26b585d 100644
+--- a/NAM/wavenet/model.cpp
++++ b/NAM/wavenet/model.cpp
+@@ -7,6 +7,7 @@
+ 
+ #include <Eigen/Dense>
+ 
++#include "../weights_iterator.h"
+ #include "../get_dsp.h"
+ #include "../registry.h"
+ #include "slimmable.h"
+@@ -43,7 +44,7 @@ nam::wavenet::detail::Head::Head(const HeadParams& params)
+   }
+ }
+ 
+-void nam::wavenet::detail::Head::set_weights_(std::vector<float>::iterator& weights)
++void nam::wavenet::detail::Head::set_weights_(nam::WeightsIterator& weights)
+ {
+   for (size_t i = 0; i < _convs.size(); i++)
+     _convs[i].set_weights_(weights);
+@@ -149,7 +150,7 @@ void nam::wavenet::detail::Layer::SetMaxBufferSize(const int maxBufferSize)
+     this->_head1x1_post_film->SetMaxBufferSize(maxBufferSize);
+ }
+ 
+-void nam::wavenet::detail::Layer::set_weights_(std::vector<float>::iterator& weights)
++void nam::wavenet::detail::Layer::set_weights_(nam::WeightsIterator& weights)
+ {
+   this->_conv.set_weights_(weights);
+   this->_input_mixin.set_weights_(weights);
+@@ -563,7 +564,7 @@ const Eigen::MatrixXf& nam::wavenet::detail::LayerArray::GetHeadOutputs() const
+ }
+ 
+ 
+-void nam::wavenet::detail::LayerArray::set_weights_(std::vector<float>::iterator& weights)
++void nam::wavenet::detail::LayerArray::set_weights_(nam::WeightsIterator& weights)
+ {
+   this->_rechannel.set_weights_(weights);
+   for (size_t i = 0; i < this->_layers.size(); i++)
+@@ -663,7 +664,7 @@ nam::wavenet::WaveNet::WaveNet(const int in_channels,
+ 
+ void nam::wavenet::WaveNet::set_weights_(std::vector<float>& weights)
+ {
+-  std::vector<float>::iterator it = weights.begin();
++  nam::WeightsIterator it(weights);
+   // Note: condition_dsp already has its own weights from construction,
+   // so we don't need to set its weights here.
+   for (size_t i = 0; i < this->_layer_arrays.size(); i++)
+diff --git a/NAM/wavenet/model.h b/NAM/wavenet/model.h
+index a878dd3..1dfe9aa 100644
+--- a/NAM/wavenet/model.h
++++ b/NAM/wavenet/model.h
+@@ -9,6 +9,7 @@
+ 
+ #include <Eigen/Dense>
+ 
++#include "../weights_iterator.h"
+ #include "../dsp.h"
+ #include "json.hpp"
+ 
+@@ -68,7 +69,7 @@ public:
+ 
+   /// \brief Set model weights from an iterator
+   /// \param weights Iterator to the weights vector. Will be advanced as weights are consumed.
+-  void set_weights_(std::vector<float>::iterator& weights);
++  void set_weights_(nam::WeightsIterator& weights);
+ 
+   int GetPrewarmSamples() override { return mPrewarmSamples; };
+ 
+diff --git a/NAM/weights_iterator.h b/NAM/weights_iterator.h
+new file mode 100644
+index 0000000..755e84f
+--- /dev/null
++++ b/NAM/weights_iterator.h
+@@ -0,0 +1,54 @@
++#pragma once
++// Xythos patch (patches/nam/): a bounds-checked cursor over a model's weights. The loaders read weights with
++// *(it++) as the config dictates, so a model file with fewer weights than its config needs read past the end of the
++// vector (found by fuzzing). Reading past the end now throws instead.
++
++#include <cstddef>
++#include <stdexcept>
++#include <vector>
++
++namespace nam
++{
++class WeightsIterator
++{
++public:
++  explicit WeightsIterator(std::vector<float>& weights)
++  : _weights(&weights)
++  , _data(weights.data())
++  , _size(weights.size())
++  {
++  }
++
++  float& operator*() const
++  {
++    if (_index >= _size)
++      throw std::runtime_error("Model has fewer weights than its configuration needs");
++    return _data[_index];
++  }
++  WeightsIterator& operator++()
++  {
++    ++_index;
++    return *this;
++  }
++  WeightsIterator operator++(int)
++  {
++    WeightsIterator before = *this;
++    ++_index;
++    return before;
++  }
++
++  // Comparisons with the vector's own iterators (it != weights.end())
++  bool equals(const std::vector<float>::iterator& other) const
++  {
++    return static_cast<std::ptrdiff_t>(_index) == other - _weights->begin();
++  }
++  bool operator==(const std::vector<float>::iterator& other) const { return equals(other); }
++  bool operator!=(const std::vector<float>::iterator& other) const { return !equals(other); }
++
++private:
++  std::vector<float>* _weights;
++  float* _data;
++  size_t _size;
++  size_t _index = 0;
++};
++} // namespace nam

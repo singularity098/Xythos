@@ -26,6 +26,7 @@ jobs:
             deps/miniz
             deps/xxHash
             deps/libwebp
+            deps/stb
           key: submodules-${{ runner.os }}-${{ steps.submodules.outputs.key }}
       - name: Fetch submodules
         shell: bash
@@ -70,6 +71,7 @@ jobs:
             deps/miniz
             deps/xxHash
             deps/libwebp
+            deps/stb
           key: submodules-${{ runner.os }}-${{ steps.submodules.outputs.key }}
       - name: Fetch submodules
         shell: bash
@@ -108,6 +110,7 @@ jobs:
             deps/miniz
             deps/xxHash
             deps/libwebp
+            deps/stb
           key: submodules-${{ runner.os }}-${{ steps.submodules.outputs.key }}
       - name: Fetch submodules
         shell: bash
