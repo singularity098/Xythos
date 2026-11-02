@@ -10,6 +10,7 @@
 #include "NAM/get_dsp.h"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -312,4 +313,43 @@ TEST_CASE("a model config with a missing key or impossible sizes fails to load i
     noVersion.erase("version");
     CHECK_THROWS(nam::get_dsp(noVersion));
     CHECK_NOTHROW(nam::get_dsp(lstm));
+}
+
+TEST_CASE("every NAM Core example model still loads with our patches")
+{
+    // patches/nam/ refuses impossible configs; none of NAM Core's own models may be among them
+    int loaded = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(XYTHOS_EXAMPLE_MODELS))
+    {
+        if (entry.path().extension() != ".nam")
+            continue;
+        CAPTURE(entry.path().filename().string());
+        CHECK_NOTHROW(CHECK(nam::get_dsp(entry.path()) != nullptr));
+        ++loaded;
+    }
+    CHECK(loaded >= 9);
+}
+
+TEST_CASE("a WaveNet whose layer arrays don't fit together fails to load instead of reading out of bounds")
+{
+    // patches/nam/: the arrays' sizes must chain (matrix products are unchecked in release builds)
+    std::ifstream in(exampleModel("wavenet.nam"));
+    const nlohmann::json wavenet = nlohmann::json::parse(in);
+    REQUIRE(wavenet["config"]["layers"].size() >= 2);
+    const std::vector<std::pair<int, const char*>> changes = {
+        { 0, "input_size" }, { 1, "input_size" }, { 0, "condition_size" }, { 0, "head_size" }, { 1, "channels" }
+    };
+    for (const auto& [array, key] : changes)
+    {
+        CAPTURE(array);
+        CAPTURE(key);
+        for (const int delta : { 1, -100 })
+        {
+            nlohmann::json bad = wavenet;
+            auto& value = bad["config"]["layers"][array][key];
+            value = value.get<int>() + delta;
+            CHECK_THROWS(nam::get_dsp(bad));
+        }
+    }
+    CHECK_NOTHROW(nam::get_dsp(wavenet));
 }

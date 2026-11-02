@@ -1,0 +1,37 @@
+diff --git a/NAM/wavenet/model.cpp b/NAM/wavenet/model.cpp
+index 0d04a27..e1a1834 100644
+--- a/NAM/wavenet/model.cpp
++++ b/NAM/wavenet/model.cpp
+@@ -628,6 +628,32 @@ nam::wavenet::WaveNet::WaveNet(const int in_channels,
+   else if (head_params.has_value())
+     throw std::runtime_error("WaveNet: head configuration provided but with_head is false");
+ 
++  // Xythos patch (patches/nam/): the layer arrays' sizes must chain, or their matrix products (unchecked in release
++  // builds) read out of bounds (found by fuzzing). Array 0 takes the model's input; array i the previous array's
++  // layer outputs and head outputs; without a condition DSP the condition is the input.
++  for (size_t i = 0; i < layer_array_params.size(); i++)
++  {
++    const auto& p = layer_array_params[i];
++    const int head_inputs = p.head1x1_params.active ? p.head1x1_params.out_channels : p.bottleneck;
++    std::string problem;
++    if (p.input_size < 1 || p.condition_size < 1 || p.channels < 1 || p.bottleneck < 1 || p.head_size < 1
++        || head_inputs < 1 || p.dilations.empty() || p.kernel_sizes.size() != p.dilations.size())
++      problem = "sizes must be positive, with a kernel size per dilation";
++    else if (i == 0 && p.input_size != in_channels)
++      problem = "input_size must match the model's input channels";
++    else if (i > 0 && p.input_size != layer_array_params[i - 1].channels)
++      problem = "input_size must match the preceding layer array's channels";
++    else if (i > 0 && head_inputs != layer_array_params[i - 1].head_size)
++      problem = "its head inputs must match the preceding layer array's head_size";
++    else if (this->_condition_dsp == nullptr && p.condition_size != this->_get_condition_dim())
++      problem = "condition_size must match the input channels";
++    for (size_t k = 0; problem.empty() && k < p.dilations.size(); k++)
++      if (p.dilations[k] < 1 || p.kernel_sizes[k] < 1)
++        problem = "dilations and kernel sizes must be positive";
++    if (!problem.empty())
++      throw std::runtime_error("WaveNet layer array " + std::to_string(i) + ": " + problem);
++  }
++
+   for (size_t i = 0; i < layer_array_params.size(); i++)
+   {
+     // Quick assert that the condition_dsp will output compatibly with this layer array

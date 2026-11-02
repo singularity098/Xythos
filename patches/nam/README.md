@@ -23,6 +23,13 @@ stops with an error if a patch no longer applies.
   over `NAM/` (on top of 0001); after updating NAM Core, redo it the same way.
 - `0003-lstm-config-sizes.patch`: an LSTM config with no layers or a size below 1 read layer -1 or empty matrices;
   such configs are refused.
+- `0004-wavenet-layer-array-sizes.patch`: a WaveNet's layer arrays feed each other (array 0 takes the input, array
+  i the previous array's layer outputs and head outputs), and nothing checked their sizes chain; Eigen's dimension
+  checks are compiled out in release builds, so a mismatch read out of bounds in the matrix products. The
+  constructor now checks every array before building any: positive sizes, a kernel size per dilation,
+  input_size against the input or the previous array's channels, its head inputs against the previous head_size,
+  and condition_size against the input when there's no condition DSP. Every NAM Core example model still loads.
 
-Tests: "a model file with fewer weights..." and "a model config with a missing key or impossible sizes..." in
-`tests/NamBlockTests.cpp`.
+Tests in `tests/NamBlockTests.cpp`: "a model file with fewer weights...", "a model config with a missing key or
+impossible sizes...", "a WaveNet whose layer arrays don't fit together..." and "every NAM Core example model still
+loads with our patches".

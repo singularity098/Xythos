@@ -30,7 +30,7 @@ Xythos (named NAMsayin until 2026-10-29) is a guitar rig plugin (VST3 + LV2, and
 ```
 CMakeLists.txt        Top-level build; builds NAM Core as the static library `nam`
 deps/DPF              Submodule (DPF main), patched at configure time from patches/dpf/ (Linux only; see its README)
-deps/NeuralAmpModelerCore  Submodule, pinned to tag v0.6.0, patched at configure time from patches/nam/ (bounds-checked weights, checked config keys, LSTM sizes)
+deps/NeuralAmpModelerCore  Submodule, pinned to tag v0.6.0, patched at configure time from patches/nam/ (bounds-checked weights, checked config keys, LSTM and WaveNet sizes)
 deps/doctest          Submodule, pinned to v2.4.12 (unit tests)
 deps/FFTConvolver     Submodule (MIT): zero-latency partitioned convolution for the IR block
 deps/miniz            Submodule, pinned to 3.1.0 (MIT): reading zip files in the library
