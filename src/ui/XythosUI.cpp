@@ -2505,7 +2505,7 @@ private:
         if (image(path) == nullptr)
         {
             deleteUserImage(fImageKind, *id);
-            showToast("Couldn't show " + fileStem(filename) + ": use an 8-bit PNG, a JPEG or a WebP");
+            showToast("Couldn't show " + fileStem(filename) + ": use a PNG, JPEG or WebP of up to 50 megapixels");
             return;
         }
         fImageList = listUserImages(fImageKind);
@@ -3604,7 +3604,7 @@ private:
         return best;
     }
 
-    // An image file (8-bit PNG, JPEG or WebP), loaded once; nullptr if it can't be loaded
+    // An image file (PNG, JPEG or WebP), loaded once; nullptr if it can't be loaded
     NanoImage* image(const std::string& path)
     {
         if (path.empty())
@@ -3615,9 +3615,9 @@ private:
             it = fImages.emplace(path, std::make_unique<NanoImage>()).first;
             if (const std::optional<std::string> bytes = readFile(pathFromUtf8(path)))
                 loadImage(*it->second, reinterpret_cast<const uchar*>(bytes->data()), static_cast<uint>(bytes->size()));
-            // DPF's image decoder is an older stb_image: 8-bit PNG and JPEG work, 16-bit PNG doesn't
+            // damaged, not an image, or past decodeRaster()'s size limits
             if (!it->second->isValid())
-                d_stderr2("Xythos: can't load image %s (use an 8-bit PNG, a JPEG or a WebP)", path.c_str());
+                d_stderr2("Xythos: can't load image %s (use a PNG, JPEG or WebP of up to 50 megapixels)", path.c_str());
         }
         return it->second->isValid() ? it->second.get() : nullptr;
     }
@@ -5206,7 +5206,7 @@ private:
                      "the stock settings again. Blocks already in a chain don't change." };
         case Hit::ImageAdd:
             return { "Add Image",
-                     "Picks an image file (8-bit PNG, JPEG or WebP) and copies it into your library, so it stays "
+                     "Picks an image file (PNG, JPEG or WebP) and copies it into your library, so it stays "
                      "even if you move or delete the original, and shows it on this block." };
         case Hit::Split:
             return { "Split",

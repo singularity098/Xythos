@@ -107,14 +107,9 @@ bool isUsableImage(const std::string& bytes, std::string* error)
     const auto starts = [&bytes](std::string_view magic, size_t at = 0) {
         return bytes.size() >= at + magic.size() && bytes.compare(at, magic.size(), magic) == 0;
     };
-    if (starts("\x89PNG\r\n\x1a\n"))
-    {
-        // IHDR's bit depth: DPF's image decoder (an older stb_image) can't read 16-bit PNG
-        if (bytes.size() > 24 && static_cast<unsigned char>(bytes[24]) > 8)
-            return fail(error, "16-bit PNGs can't be shown; save it as an 8-bit PNG or a JPEG");
-        return true;
-    }
-    if (starts("\xff\xd8\xff") || (starts("RIFF") && starts("WEBP", 8)))
+    // Any bit depth: the UI decodes PNG and JPEG itself (decodeRaster(), src/ui/RasterImage.*), 16-bit PNG
+    // included (owner, 2026-11-02; DPF's old decoder couldn't)
+    if (starts("\x89PNG\r\n\x1a\n") || starts("\xff\xd8\xff") || (starts("RIFF") && starts("WEBP", 8)))
         return true;
     return fail(error, "not a PNG, JPEG or WebP image");
 }

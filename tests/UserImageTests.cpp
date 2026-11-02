@@ -43,15 +43,15 @@ TEST_CASE("NAM blocks use the amp images, IR blocks the cab images, every other 
     CHECK(userImagesDir(ImageKind::Pedal) == fixture.root / "config" / "images" / "pedals");
 }
 
-TEST_CASE("only 8-bit PNG, JPEG and WebP images are taken")
+TEST_CASE("only PNG (8 or 16-bit), JPEG and WebP images are taken")
 {
     CHECK(isUsableImage(pngBytes('\x08')));
+    CHECK(isUsableImage(pngBytes('\x10')));
     CHECK(isUsableImage("\xff\xd8\xff\xe0 jpeg"));
     CHECK(isUsableImage(std::string("RIFF\0\0\0\0WEBPVP8 ", 16)));
     std::string error;
-    CHECK_FALSE(isUsableImage(pngBytes('\x10'), &error));
-    CHECK(error.find("16-bit") != std::string::npos);
     CHECK_FALSE(isUsableImage("GIF89a", &error));
+    CHECK(!error.empty());
     CHECK_FALSE(isUsableImage(""));
 }
 

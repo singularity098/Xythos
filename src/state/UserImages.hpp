@@ -38,7 +38,7 @@ std::vector<UserImage> listUserImages(ImageKind kind);
 // The file of the image `id`, or "" if there's no such image (deleted, or an id that isn't a plain file name)
 std::string userImagePath(ImageKind kind, const std::string& id);
 
-// Whether `bytes` are an image the UI can show: PNG (8-bit), JPEG or WebP. Else false, with the reason in `error`.
+// Whether `bytes` are an image the UI can show: PNG (8 or 16-bit), JPEG or WebP, by their first bytes. Else false, with the reason in `error`.
 bool isUsableImage(const std::string& bytes, std::string* error = nullptr);
 
 // Adds an image to a library under `fileName` (the extension made lowercase), with a number added when that name

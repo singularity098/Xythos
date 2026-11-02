@@ -53,6 +53,20 @@ const unsigned char kTinyJpeg[] = {
     255, 218, 0, 12, 3, 1, 0, 2, 17, 3, 17, 0, 63, 0, 248, 174, 138, 40, 175, 198, 207, 232, 3, 255, 217
 };
 
+// 16-bit PNGs (users' images may be; owner, 2026-11-02): RGBA 2x1, (ffff, 8000, 0000, ffff) and
+// (1234, abcd, 0101, 8080); grey + alpha 1x2, (4000, ffff) and (ff00, 0000)
+const unsigned char kRgba16Png[] = {
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 16, 6, 0, 0, 0, 164,
+    178, 163, 201, 0, 0, 0, 25, 73, 68, 65, 84, 120, 156, 99, 248, 255, 191, 129, 129, 129, 225, 255, 127, 33,
+    147, 213, 103, 25, 25, 27, 26, 0, 68, 101, 7, 61, 249, 88, 177, 76, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96,
+    130
+};
+const unsigned char kGreyAlpha16Png[] = {
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 2, 16, 4, 0, 0, 0, 99,
+    24, 162, 239, 0, 0, 0, 18, 73, 68, 65, 84, 120, 156, 99, 112, 96, 248, 255, 159, 225, 63, 3, 3, 3, 0, 19,
+    57, 3, 62, 30, 55, 36, 222, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
+};
+
 // A PNG whose header claims width x height (nothing after the header: only stbi_info gets that far)
 std::vector<unsigned char> pngHeader(uint32_t width, uint32_t height)
 {
@@ -87,6 +101,25 @@ TEST_CASE("PNG and JPEG decode to 8-bit RGBA")
     CHECK(std::abs(jpeg.pixels[1] - 60) <= 3);
     CHECK(std::abs(jpeg.pixels[2] - 30) <= 3);
     CHECK(jpeg.pixels[3] == 255);
+}
+
+TEST_CASE("16-bit PNGs decode, to their high bytes")
+{
+    RgbaImage rgba;
+    REQUIRE(decodeRaster(kRgba16Png, sizeof(kRgba16Png), rgba));
+    CHECK(rgba.width == 2);
+    CHECK(rgba.height == 1);
+    const unsigned char expectedRgba[] = { 255, 128, 0, 255, 0x12, 0xab, 0x01, 0x80 };
+    REQUIRE(rgba.pixels.size() == sizeof(expectedRgba));
+    CHECK(std::memcmp(rgba.pixels.data(), expectedRgba, sizeof(expectedRgba)) == 0);
+
+    RgbaImage grey;
+    REQUIRE(decodeRaster(kGreyAlpha16Png, sizeof(kGreyAlpha16Png), grey));
+    CHECK(grey.width == 1);
+    CHECK(grey.height == 2);
+    const unsigned char expectedGrey[] = { 0x40, 0x40, 0x40, 255, 0xff, 0xff, 0xff, 0 };
+    REQUIRE(grey.pixels.size() == sizeof(expectedGrey));
+    CHECK(std::memcmp(grey.pixels.data(), expectedGrey, sizeof(expectedGrey)) == 0);
 }
 
 TEST_CASE("damaged, unknown and oversized images don't decode")
