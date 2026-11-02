@@ -1,0 +1,547 @@
+diff --git a/NAM/activations.cpp b/NAM/activations.cpp
+index 3e0bc94..b5182ed 100644
+--- a/NAM/activations.cpp
++++ b/NAM/activations.cpp
+@@ -91,7 +91,7 @@ nam::activations::ActivationConfig nam::activations::ActivationConfig::from_json
+   // If it's an object, parse type and parameters
+   if (j.is_object())
+   {
+-    std::string type_str = j["type"].get<std::string>();
++    std::string type_str = j.at("type").get<std::string>();
+     auto it = type_map.find(type_str);
+     if (it == type_map.end())
+     {
+@@ -104,11 +104,11 @@ nam::activations::ActivationConfig nam::activations::ActivationConfig::from_json
+     {
+       if (j.find("negative_slope") != j.end())
+       {
+-        config.negative_slope = j["negative_slope"].get<float>();
++        config.negative_slope = j.at("negative_slope").get<float>();
+       }
+       else if (j.find("negative_slopes") != j.end())
+       {
+-        config.negative_slopes = j["negative_slopes"].get<std::vector<float>>();
++        config.negative_slopes = j.at("negative_slopes").get<std::vector<float>>();
+       }
+     }
+     else if (config.type == ActivationType::LeakyReLU)
+@@ -133,19 +133,19 @@ nam::activations::Activation::Ptr nam::activations::Activation::get_activation(c
+ {
+   switch (config.type)
+   {
+-    case ActivationType::Tanh: return _activations["Tanh"];
+-    case ActivationType::Hardtanh: return _activations["Hardtanh"];
+-    case ActivationType::Fasttanh: return _activations["Fasttanh"];
+-    case ActivationType::ReLU: return _activations["ReLU"];
+-    case ActivationType::Sigmoid: return _activations["Sigmoid"];
+-    case ActivationType::SiLU: return _activations["SiLU"];
+-    case ActivationType::Hardswish: return _activations["Hardswish"];
++    case ActivationType::Tanh: return _activations.at("Tanh");
++    case ActivationType::Hardtanh: return _activations.at("Hardtanh");
++    case ActivationType::Fasttanh: return _activations.at("Fasttanh");
++    case ActivationType::ReLU: return _activations.at("ReLU");
++    case ActivationType::Sigmoid: return _activations.at("Sigmoid");
++    case ActivationType::SiLU: return _activations.at("SiLU");
++    case ActivationType::Hardswish: return _activations.at("Hardswish");
+     case ActivationType::LeakyReLU:
+       if (config.negative_slope.has_value())
+       {
+         return std::make_shared<ActivationLeakyReLU>(config.negative_slope.value());
+       }
+-      return _activations["LeakyReLU"];
++      return _activations.at("LeakyReLU");
+     case ActivationType::PReLU:
+       if (config.negative_slopes.has_value())
+       {
+@@ -160,7 +160,7 @@ nam::activations::Activation::Ptr nam::activations::Activation::get_activation(c
+       return std::make_shared<ActivationLeakyHardTanh>(config.min_val.value_or(-1.0f), config.max_val.value_or(1.0f),
+                                                        config.min_slope.value_or(0.01f),
+                                                        config.max_slope.value_or(0.01f));
+-    case ActivationType::Softsign: return _activations["Softsign"];
++    case ActivationType::Softsign: return _activations.at("Softsign");
+     default: return nullptr;
+   }
+ }
+@@ -169,10 +169,10 @@ void nam::activations::Activation::enable_fast_tanh()
+ {
+   nam::activations::Activation::using_fast_tanh = true;
+ 
+-  if (_activations["Tanh"] != _activations["Fasttanh"])
++  if (_activations.at("Tanh") != _activations.at("Fasttanh"))
+   {
+-    tanh_bak = _activations["Tanh"];
+-    _activations["Tanh"] = _activations["Fasttanh"];
++    tanh_bak = _activations.at("Tanh");
++    _activations.at("Tanh") = _activations.at("Fasttanh");
+   }
+ }
+ 
+@@ -180,9 +180,9 @@ void nam::activations::Activation::disable_fast_tanh()
+ {
+   nam::activations::Activation::using_fast_tanh = false;
+ 
+-  if (_activations["Tanh"] == _activations["Fasttanh"])
++  if (_activations.at("Tanh") == _activations.at("Fasttanh"))
+   {
+-    _activations["Tanh"] = tanh_bak;
++    _activations.at("Tanh") = tanh_bak;
+   }
+ }
+ 
+@@ -192,17 +192,17 @@ void nam::activations::Activation::enable_lut(std::string function_name, float m
+   if (function_name == "Tanh")
+   {
+     fn = [](float x) { return std::tanh(x); };
+-    tanh_bak = _activations["Tanh"];
++    tanh_bak = _activations.at("Tanh");
+   }
+   else if (function_name == "Sigmoid")
+   {
+     fn = sigmoid;
+-    sigmoid_bak = _activations["Sigmoid"];
++    sigmoid_bak = _activations.at("Sigmoid");
+   }
+   else if (function_name == "SiLU")
+   {
+     fn = swish;
+-    silu_bak = _activations["SiLU"];
++    silu_bak = _activations.at("SiLU");
+   }
+   else
+   {
+@@ -215,15 +215,15 @@ void nam::activations::Activation::disable_lut(std::string function_name)
+ {
+   if (function_name == "Tanh")
+   {
+-    _activations["Tanh"] = tanh_bak;
++    _activations.at("Tanh") = tanh_bak;
+   }
+   else if (function_name == "Sigmoid")
+   {
+-    _activations["Sigmoid"] = sigmoid_bak;
++    _activations.at("Sigmoid") = sigmoid_bak;
+   }
+   else if (function_name == "SiLU")
+   {
+-    _activations["SiLU"] = silu_bak;
++    _activations.at("SiLU") = silu_bak;
+   }
+   else
+   {
+diff --git a/NAM/container.cpp b/NAM/container.cpp
+index 1275ac4..8930421 100644
+--- a/NAM/container.cpp
++++ b/NAM/container.cpp
+@@ -147,7 +147,7 @@ std::unique_ptr<DSP> ContainerConfig::create(std::vector<float> weights, double
+ {
+   (void)weights; // Container has no top-level weights
+ 
+-  auto submodels_json = raw_config["submodels"];
++  auto submodels_json = raw_config.at("submodels");
+   if (!submodels_json.is_array() || submodels_json.empty())
+     throw std::runtime_error("SlimmableContainer: 'submodels' must be a non-empty array");
+ 
+diff --git a/NAM/convnet.cpp b/NAM/convnet.cpp
+index 9c6cb94..cf7204b 100644
+--- a/NAM/convnet.cpp
++++ b/NAM/convnet.cpp
+@@ -327,11 +327,11 @@ void nam::convnet::ConvNet::_rewind_buffers_()
+ nam::convnet::ConvNetConfig nam::convnet::parse_config_json(const nlohmann::json& config)
+ {
+   ConvNetConfig c;
+-  c.channels = config["channels"];
+-  c.dilations = config["dilations"].get<std::vector<int>>();
+-  c.batchnorm = config["batchnorm"];
++  c.channels = config.at("channels");
++  c.dilations = config.at("dilations").get<std::vector<int>>();
++  c.batchnorm = config.at("batchnorm");
+   // Parse JSON into typed ActivationConfig at model loading boundary
+-  c.activation = activations::ActivationConfig::from_json(config["activation"]);
++  c.activation = activations::ActivationConfig::from_json(config.at("activation"));
+   c.groups = config.value("groups", 1); // defaults to 1
+   // Default to 1 channel in/out for backward compatibility
+   c.in_channels = config.value("in_channels", 1);
+diff --git a/NAM/get_dsp.cpp b/NAM/get_dsp.cpp
+index 4e205e3..dd01c1a 100644
+--- a/NAM/get_dsp.cpp
++++ b/NAM/get_dsp.cpp
+@@ -143,13 +143,13 @@ std::vector<float> GetWeights(nlohmann::json const& j)
+ 
+ void populate_dsp_data(const nlohmann::json& config, dspData& returnedConfig)
+ {
+-  verify_config_version(config["version"].get<std::string>());
++  verify_config_version(config.at("version").get<std::string>());
+ 
+-  nlohmann::json config_json = config["config"];
++  nlohmann::json config_json = config.at("config");
+   std::vector<float> weights = GetWeights(config);
+ 
+-  returnedConfig.version = config["version"].get<std::string>();
+-  returnedConfig.architecture = config["architecture"].get<std::string>();
++  returnedConfig.version = config.at("version").get<std::string>();
++  returnedConfig.architecture = config.at("architecture").get<std::string>();
+   returnedConfig.config = config_json;
+   returnedConfig.metadata = config.value("metadata", nlohmann::json());
+   returnedConfig.weights = weights;
+@@ -298,7 +298,7 @@ std::unique_ptr<DSP> get_dsp(dspData& conf, DspLoadOptions options)
+ double get_sample_rate_from_nam_file(const nlohmann::json& j)
+ {
+   if (j.find("sample_rate") != j.end())
+-    return j["sample_rate"];
++    return j.at("sample_rate");
+   else
+     return -1.0;
+ }
+diff --git a/NAM/linear.cpp b/NAM/linear.cpp
+index 3df2f4f..df95eab 100644
+--- a/NAM/linear.cpp
++++ b/NAM/linear.cpp
+@@ -519,8 +519,8 @@ nam::LinearImplementation nam::linear::select_implementation(const int receptive
+ nam::linear::LinearConfig nam::linear::parse_config_json(const nlohmann::json& config)
+ {
+   LinearConfig c;
+-  c.receptive_field = config["receptive_field"];
+-  c.bias = config["bias"];
++  c.receptive_field = config.at("receptive_field");
++  c.bias = config.at("bias");
+   // Default to 1 channel in/out for backward compatibility
+   c.in_channels = config.value("in_channels", 1);
+   c.out_channels = config.value("out_channels", 1);
+diff --git a/NAM/lstm.cpp b/NAM/lstm.cpp
+index bf709a1..8c89f79 100644
+--- a/NAM/lstm.cpp
++++ b/NAM/lstm.cpp
+@@ -172,9 +172,9 @@ void nam::lstm::LSTM::_process_sample()
+ nam::lstm::LSTMConfig nam::lstm::parse_config_json(const nlohmann::json& config)
+ {
+   LSTMConfig c;
+-  c.num_layers = config["num_layers"];
+-  c.input_size = config["input_size"];
+-  c.hidden_size = config["hidden_size"];
++  c.num_layers = config.at("num_layers");
++  c.input_size = config.at("input_size");
++  c.hidden_size = config.at("hidden_size");
+   // Default to 1 channel in/out for backward compatibility
+   c.in_channels = config.value("in_channels", 1);
+   c.out_channels = config.value("out_channels", 1);
+diff --git a/NAM/wavenet/model.cpp b/NAM/wavenet/model.cpp
+index 26b585d..0d04a27 100644
+--- a/NAM/wavenet/model.cpp
++++ b/NAM/wavenet/model.cpp
+@@ -920,9 +920,9 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+   WaveNetConfig wc;
+ 
+   // Condition DSP (eagerly built via get_dsp)
+-  if ((config.find("condition_dsp") != config.end()) && !config["condition_dsp"].is_null())
++  if ((config.find("condition_dsp") != config.end()) && !config.at("condition_dsp").is_null())
+   {
+-    const nlohmann::json& condition_dsp_json = config["condition_dsp"];
++    const nlohmann::json& condition_dsp_json = config.at("condition_dsp");
+     wc.condition_dsp = nam::get_dsp(condition_dsp_json);
+     if (wc.condition_dsp->GetExpectedSampleRate() != expectedSampleRate)
+     {
+@@ -933,14 +933,14 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     }
+   }
+ 
+-  for (size_t i = 0; i < config["layers"].size(); i++)
++  for (size_t i = 0; i < config.at("layers").size(); i++)
+   {
+-    nlohmann::json layer_config = config["layers"][i];
++    nlohmann::json layer_config = config.at("layers")[i];
+ 
+     const int groups = layer_config.value("groups_input", 1); // defaults to 1
+     const int groups_input_mixin = layer_config.value("groups_input_mixin", 1); // defaults to 1
+ 
+-    const int channels = layer_config["channels"];
++    const int channels = layer_config.at("channels");
+     const int bottleneck = layer_config.value("bottleneck", channels); // defaults to channels if not present
+ 
+     // Parse layer1x1 parameters
+@@ -948,14 +948,14 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     int layer1x1_groups = 1;
+     if (layer_config.find("layer1x1") != layer_config.end())
+     {
+-      const auto& layer1x1_config = layer_config["layer1x1"];
+-      layer1x1_active = layer1x1_config["active"];
+-      layer1x1_groups = layer1x1_config["groups"];
++      const auto& layer1x1_config = layer_config.at("layer1x1");
++      layer1x1_active = layer1x1_config.at("active");
++      layer1x1_groups = layer1x1_config.at("groups");
+     }
+     nam::wavenet::Layer1x1Params layer1x1_params(layer1x1_active, layer1x1_groups);
+ 
+-    const int input_size = layer_config["input_size"];
+-    const int condition_size = layer_config["condition_size"];
++    const int input_size = layer_config.at("input_size");
++    const int condition_size = layer_config.at("condition_size");
+ 
+     int head_size = 0;
+     int head_dilation = 1;
+@@ -963,9 +963,9 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     bool head_bias = false;
+ 
+     // Prefer nested "head" (matches trainer export). Legacy .nam uses head_size + head_bias (implicit kernel 1).
+-    if (layer_config.find("head") != layer_config.end() && !layer_config["head"].is_null())
++    if (layer_config.find("head") != layer_config.end() && !layer_config.at("head").is_null())
+     {
+-      const auto& head_json = layer_config["head"];
++      const auto& head_json = layer_config.at("head");
+       if (!head_json.is_object())
+       {
+         throw std::runtime_error("Layer array " + std::to_string(i) + ": 'head' must be a JSON object");
+@@ -982,7 +982,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     }
+     else if (layer_config.find("head_size") != layer_config.end())
+     {
+-      head_size = layer_config["head_size"].get<int>();
++      head_size = layer_config.at("head_size").get<int>();
+       head_kernel_size = 1;
+       head_bias = layer_config.at("head_bias").get<bool>();
+     }
+@@ -998,7 +998,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+       throw std::runtime_error("Layer array " + std::to_string(i) + ": head.kernel_size must be >= 1");
+     }
+ 
+-    const auto dilations = layer_config["dilations"];
++    const auto dilations = layer_config.at("dilations");
+     const size_t num_layers = dilations.size();
+ 
+     // Parse kernel sizes - support legacy single-value kernel_size or new per-layer kernel_sizes
+@@ -1012,7 +1012,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     }
+     else if (has_kernel_sizes)
+     {
+-      const auto& kernel_sizes_json = layer_config["kernel_sizes"];
++      const auto& kernel_sizes_json = layer_config.at("kernel_sizes");
+       if (!kernel_sizes_json.is_array())
+       {
+         throw std::runtime_error("Layer array " + std::to_string(i) + ": kernel_sizes must be an array");
+@@ -1030,7 +1030,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     }
+     else if (has_kernel_size)
+     {
+-      const int kernel_size = layer_config["kernel_size"].get<int>();
++      const int kernel_size = layer_config.at("kernel_size").get<int>();
+       kernel_sizes.resize(num_layers, kernel_size);
+     }
+     else
+@@ -1041,9 +1041,9 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+ 
+     // Parse activation config(s) - support both single config and array
+     std::vector<activations::ActivationConfig> activation_configs;
+-    if (layer_config["activation"].is_array())
++    if (layer_config.at("activation").is_array())
+     {
+-      for (const auto& activation_json : layer_config["activation"])
++      for (const auto& activation_json : layer_config.at("activation"))
+       {
+         activation_configs.push_back(activations::ActivationConfig::from_json(activation_json));
+       }
+@@ -1058,7 +1058,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     {
+       // Single activation config - duplicate it for all layers
+       const activations::ActivationConfig activation_config =
+-        activations::ActivationConfig::from_json(layer_config["activation"]);
++        activations::ActivationConfig::from_json(layer_config.at("activation"));
+       activation_configs.resize(num_layers, activation_config);
+     }
+ 
+@@ -1079,9 +1079,9 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+ 
+     if (layer_config.find("gating_mode") != layer_config.end())
+     {
+-      if (layer_config["gating_mode"].is_array())
++      if (layer_config.at("gating_mode").is_array())
+       {
+-        for (const auto& gating_mode_json : layer_config["gating_mode"])
++        for (const auto& gating_mode_json : layer_config.at("gating_mode"))
+         {
+           std::string gating_mode_str = gating_mode_json.get<std::string>();
+           GatingMode mode = parse_gating_mode_str(gating_mode_str);
+@@ -1092,22 +1092,22 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+           {
+             if (layer_config.find("secondary_activation") != layer_config.end())
+             {
+-              if (layer_config["secondary_activation"].is_array())
++              if (layer_config.at("secondary_activation").is_array())
+               {
+-                if (gating_modes.size() > layer_config["secondary_activation"].size())
++                if (gating_modes.size() > layer_config.at("secondary_activation").size())
+                 {
+                   throw std::runtime_error("Layer array " + std::to_string(i)
+                                            + ": secondary_activation array size must be at least "
+                                            + std::to_string(gating_modes.size()));
+                 }
+                 secondary_activation_configs.push_back(activations::ActivationConfig::from_json(
+-                  layer_config["secondary_activation"][gating_modes.size() - 1]));
++                  layer_config.at("secondary_activation")[gating_modes.size() - 1]));
+               }
+               else
+               {
+                 // Single secondary activation - use for all gated layers
+                 secondary_activation_configs.push_back(
+-                  activations::ActivationConfig::from_json(layer_config["secondary_activation"]));
++                  activations::ActivationConfig::from_json(layer_config.at("secondary_activation")));
+               }
+             }
+             else
+@@ -1130,12 +1130,12 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+         }
+         // Validate secondary_activation array size if it's an array
+         if (layer_config.find("secondary_activation") != layer_config.end()
+-            && layer_config["secondary_activation"].is_array())
++            && layer_config.at("secondary_activation").is_array())
+         {
+-          if (layer_config["secondary_activation"].size() != num_layers)
++          if (layer_config.at("secondary_activation").size() != num_layers)
+           {
+             throw std::runtime_error("Layer array " + std::to_string(i) + ": secondary_activation array size ("
+-                                     + std::to_string(layer_config["secondary_activation"].size())
++                                     + std::to_string(layer_config.at("secondary_activation").size())
+                                      + ") must match dilations size (" + std::to_string(num_layers) + ")");
+           }
+         }
+@@ -1143,7 +1143,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+       else
+       {
+         // Single gating mode - duplicate for all layers
+-        std::string gating_mode_str = layer_config["gating_mode"].get<std::string>();
++        std::string gating_mode_str = layer_config.at("gating_mode").get<std::string>();
+         GatingMode gating_mode = parse_gating_mode_str(gating_mode_str);
+         gating_modes.resize(num_layers, gating_mode);
+ 
+@@ -1153,7 +1153,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+           if (layer_config.find("secondary_activation") != layer_config.end())
+           {
+             secondary_activation_config =
+-              activations::ActivationConfig::from_json(layer_config["secondary_activation"]);
++              activations::ActivationConfig::from_json(layer_config.at("secondary_activation"));
+           }
+           else
+           {
+@@ -1167,7 +1167,7 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     // Backward compatibility: convert old "gated" boolean to new enum
+     else if (layer_config.find("gated") != layer_config.end())
+     {
+-      bool gated = layer_config["gated"];
++      bool gated = layer_config.at("gated");
+       GatingMode gating_mode = gated ? GatingMode::GATED : GatingMode::NONE;
+       gating_modes.resize(num_layers, gating_mode);
+ 
+@@ -1195,10 +1195,10 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+     int head1x1_groups = 1;
+     if (layer_config.find("head1x1") != layer_config.end())
+     {
+-      const auto& head1x1_config = layer_config["head1x1"];
+-      head1x1_active = head1x1_config["active"];
+-      head1x1_out_channels = head1x1_config["out_channels"];
+-      head1x1_groups = head1x1_config["groups"];
++      const auto& head1x1_config = layer_config.at("head1x1");
++      head1x1_active = head1x1_config.at("active");
++      head1x1_out_channels = head1x1_config.at("out_channels");
++      head1x1_groups = head1x1_config.at("groups");
+     }
+     nam::wavenet::Head1x1Params head1x1_params(head1x1_active, head1x1_out_channels, head1x1_groups);
+ 
+@@ -1240,8 +1240,8 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+       activation_pre_film_params, activation_post_film_params, _layer1x1_post_film_params, head1x1_post_film_params));
+   }
+ 
+-  wc.with_head = config.find("head") != config.end() && !config["head"].is_null();
+-  wc.head_scale = config["head_scale"];
++  wc.with_head = config.find("head") != config.end() && !config.at("head").is_null();
++  wc.head_scale = config.at("head_scale");
+   wc.in_channels = config.value("in_channels", 1);
+ 
+   if (wc.layer_array_params.empty())
+@@ -1249,13 +1249,13 @@ nam::wavenet::WaveNetConfig nam::wavenet::parse_config_json(const nlohmann::json
+ 
+   if (wc.with_head)
+   {
+-    const nlohmann::json& hj = config["head"];
++    const nlohmann::json& hj = config.at("head");
+     HeadParams hp;
+     const int implied_in = wc.layer_array_params.back().head_size;
+     // New trainer export omits in_channels (single source: last layer head_size). Legacy .nam may include it.
+-    if (hj.find("in_channels") != hj.end() && !hj["in_channels"].is_null())
++    if (hj.find("in_channels") != hj.end() && !hj.at("in_channels").is_null())
+     {
+-      const int legacy_in = hj["in_channels"].get<int>();
++      const int legacy_in = hj.at("in_channels").get<int>();
+       if (legacy_in != implied_in)
+       {
+         std::stringstream ss;
+@@ -1293,13 +1293,13 @@ const std::string SLIMMABLE_METHOD = "slice_channels_uniform";
+ 
+ bool config_is_slimmable_wavenet(const nlohmann::json& config)
+ {
+-  if (config.find("layers") == config.end() || !config["layers"].is_array())
++  if (config.find("layers") == config.end() || !config.at("layers").is_array())
+     return false;
+-  for (const auto& lc : config["layers"])
++  for (const auto& lc : config.at("layers"))
+   {
+-    if (lc.find("slimmable") == lc.end() || !lc["slimmable"].is_object())
++    if (lc.find("slimmable") == lc.end() || !lc.at("slimmable").is_object())
+       continue;
+-    const std::string method = lc["slimmable"].value("method", "");
++    const std::string method = lc.at("slimmable").value("method", "");
+     if (method != SLIMMABLE_METHOD)
+     {
+       if (!method.empty())
+diff --git a/NAM/wavenet/slimmable.cpp b/NAM/wavenet/slimmable.cpp
+index 71c4515..2f4175c 100644
+--- a/NAM/wavenet/slimmable.cpp
++++ b/NAM/wavenet/slimmable.cpp
+@@ -541,32 +541,32 @@ std::vector<double> SlimmableWavenet::GetSlimmableSizeBreakpoints() const
+ std::unique_ptr<DSP> SlimmableWavenetConfig::create(std::vector<float> weights, double sampleRate)
+ {
+   // Parse the WaveNet model config — support both wrapped {"model": {...}} and flat config
+-  nlohmann::json model_json = raw_config.contains("model") ? raw_config["model"] : raw_config;
++  nlohmann::json model_json = raw_config.contains("model") ? raw_config.at("model") : raw_config;
+   auto wc = wavenet::parse_config_json(model_json, sampleRate);
+ 
+   // Extract per-array allowed_channels from slimmable config fields
+-  const auto& layers_json = model_json["layers"];
++  const auto& layers_json = model_json.at("layers");
+   std::vector<std::vector<int>> per_array_allowed;
+   for (size_t i = 0; i < layers_json.size(); i++)
+   {
+     const auto& lc = layers_json[i];
+     std::vector<int> allowed;
+-    if (lc.find("slimmable") != lc.end() && lc["slimmable"].is_object())
++    if (lc.find("slimmable") != lc.end() && lc.at("slimmable").is_object())
+     {
+-      const auto& slim_cfg = lc["slimmable"];
++      const auto& slim_cfg = lc.at("slimmable");
+       const std::string method = slim_cfg.value("method", "");
+       if (method != "slice_channels_uniform")
+         throw std::runtime_error("SlimmableWavenet: unsupported slimmable method '" + method + "'");
+       if (slim_cfg.find("kwargs") != slim_cfg.end()
+-          && slim_cfg["kwargs"].find("allowed_channels") != slim_cfg["kwargs"].end())
++          && slim_cfg.at("kwargs").find("allowed_channels") != slim_cfg.at("kwargs").end())
+       {
+-        for (const auto& ch : slim_cfg["kwargs"]["allowed_channels"])
++        for (const auto& ch : slim_cfg.at("kwargs").at("allowed_channels"))
+           allowed.push_back(ch.get<int>());
+       }
+       else
+       {
+         // Missing allowed_channels: assume [1, 2, ..., channels] for slice_channels_uniform
+-        const int channels = lc["channels"].get<int>();
++        const int channels = lc.at("channels").get<int>();
+         for (int c = 1; c <= channels; c++)
+           allowed.push_back(c);
+       }
+@@ -576,8 +576,8 @@ std::unique_ptr<DSP> SlimmableWavenetConfig::create(std::vector<float> weights,
+ 
+   // Extract condition_dsp JSON for future rebuilds (in model config)
+   nlohmann::json condition_dsp_json;
+-  if (model_json.find("condition_dsp") != model_json.end() && !model_json["condition_dsp"].is_null())
+-    condition_dsp_json = model_json["condition_dsp"];
++  if (model_json.find("condition_dsp") != model_json.end() && !model_json.at("condition_dsp").is_null())
++    condition_dsp_json = model_json.at("condition_dsp");
+ 
+   return std::make_unique<SlimmableWavenet>(std::move(wc.layer_array_params), std::move(per_array_allowed),
+                                             wc.in_channels, wc.head_scale, wc.with_head, std::move(condition_dsp_json),

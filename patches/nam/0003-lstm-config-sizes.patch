@@ -1,0 +1,15 @@
+diff --git a/NAM/lstm.cpp b/NAM/lstm.cpp
+index 8c89f79..9574206 100644
+--- a/NAM/lstm.cpp
++++ b/NAM/lstm.cpp
+@@ -178,6 +178,10 @@ nam::lstm::LSTMConfig nam::lstm::parse_config_json(const nlohmann::json& config)
+   // Default to 1 channel in/out for backward compatibility
+   c.in_channels = config.value("in_channels", 1);
+   c.out_channels = config.value("out_channels", 1);
++  // Xythos patch (patches/nam/): the model indexes its last layer and sizes its matrices from these, so zero or
++  // negative values read out of bounds (found by fuzzing)
++  if (c.num_layers < 1 || c.input_size < 1 || c.hidden_size < 1 || c.in_channels < 1 || c.out_channels < 1)
++    throw std::runtime_error("LSTM config needs at least one layer and positive sizes");
+   return c;
+ }
+ 

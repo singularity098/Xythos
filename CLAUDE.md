@@ -30,7 +30,7 @@ Xythos (named NAMsayin until 2026-10-29) is a guitar rig plugin (VST3 + LV2, and
 ```
 CMakeLists.txt        Top-level build; builds NAM Core as the static library `nam`
 deps/DPF              Submodule (DPF main), patched at configure time from patches/dpf/ (Linux only; see its README)
-deps/NeuralAmpModelerCore  Submodule, pinned to tag v0.6.0, patched at configure time from patches/nam/ (bounds-checked weight loading)
+deps/NeuralAmpModelerCore  Submodule, pinned to tag v0.6.0, patched at configure time from patches/nam/ (bounds-checked weights, checked config keys, LSTM sizes)
 deps/doctest          Submodule, pinned to v2.4.12 (unit tests)
 deps/FFTConvolver     Submodule (MIT): zero-latency partitioned convolution for the IR block
 deps/miniz            Submodule, pinned to 3.1.0 (MIT): reading zip files in the library
@@ -123,7 +123,7 @@ deps/khronos/         Vendored glext.h + khrplatform.h (MSVC has none; DPF's dow
 .github/workflows/    CI: Linux (Ninja), Windows (MSVC) and macOS (universal, ad-hoc signed, auval) builds + tests
 .github/scripts/      CI helper scripts
 patches/dpf/          Our DPF patches (VST3: X11 events wake the UI at once), applied by CMake (not on Windows)
-patches/nam/          Our NAM Core patches (a bounds-checked weights iterator), applied by CMake on every platform
+patches/nam/          Our NAM Core patches (safe loading of hostile .nam files; see its README), applied by CMake on every platform
 ```
 
 Planned layout for later milestones is in `docs/Architecture.md` section 2.

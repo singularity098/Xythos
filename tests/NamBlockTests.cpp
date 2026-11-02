@@ -288,3 +288,28 @@ TEST_CASE("a model file with fewer weights than its config needs fails to load i
         }
     }
 }
+
+TEST_CASE("a model config with a missing key or impossible sizes fails to load instead of reading out of bounds")
+{
+    // patches/nam/: NAM Core read required keys with operator[] on a const json (undefined for a missing key), and
+    // trusted the LSTM's sizes (no layers read layer -1)
+    std::ifstream in(exampleModel("lstm.nam"));
+    const nlohmann::json lstm = nlohmann::json::parse(in);
+    for (const char* key : { "num_layers", "input_size", "hidden_size" })
+    {
+        CAPTURE(key);
+        nlohmann::json missing = lstm;
+        missing["config"].erase(key);
+        CHECK_THROWS(nam::get_dsp(missing));
+        for (const int size : { 0, -1 })
+        {
+            nlohmann::json bad = lstm;
+            bad["config"][key] = size;
+            CHECK_THROWS(nam::get_dsp(bad));
+        }
+    }
+    nlohmann::json noVersion = lstm;
+    noVersion.erase("version");
+    CHECK_THROWS(nam::get_dsp(noVersion));
+    CHECK_NOTHROW(nam::get_dsp(lstm));
+}
