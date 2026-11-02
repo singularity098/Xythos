@@ -53,6 +53,9 @@ std::optional<LoadedPreset> loadPresetFile(const std::string& path,
                                            const std::function<std::string(const std::string& hash)>& findByHash,
                                            std::string* error = nullptr);
 
+// Only a preset file's preset.json, nothing extracted or resolved (the global values of a preset the DSP loaded)
+std::optional<Preset> readPresetFile(const std::string& path, std::string* error = nullptr);
+
 // The user's preset folder, presets/ in configDir(). Save keeps presets here, in subfolders if wanted, without the
 // files they use; Export writes a copy anywhere, with the files embedded so it can be shared.
 std::filesystem::path presetsDir();

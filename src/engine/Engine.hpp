@@ -74,6 +74,17 @@ public:
     };
     CcResult midiCc(int channel, int cc, int value);
 
+    // RT. Applies a MIDI Program Change through the active chain's MIDI map (a learned switch flips; a learned
+    // footswitch control is pressed: 1 for this process() call, then 0 again), and reports it for MIDI learn.
+    // `param` is the parameter it flipped (with its new value), -1 for none; `mapped` says the chain has a mapping
+    // for it (or MIDI learn took it), so it's not for anything else, such as loading a preset.
+    struct ProgramResult {
+        int param = -1;
+        float value = 0.0f;
+        bool mapped = false;
+    };
+    ProgramResult midiProgram(int channel, int program);
+
     // RT. Two inputs and two outputs; they may alias. `transport` is the host's, for the metronome's DAW sync.
     void process(const float* const* inputs, float* const* outputs, uint32_t frames,
                  const Transport* transport = nullptr);
@@ -138,8 +149,15 @@ private:
         AlignmentDelay alignA, alignB;        // delays the branch with less latency so both arrive together
         ParallelWorker* worker = nullptr; // runs branch B, if parallel processing is on
         std::array<int16_t, 16 * 128> midiMap; // channel * 128 + cc -> host parameter, -1 if unmapped
+        // channel * 128 + program -> host parameter (-1 if unmapped) and what the Program Change does to it
+        std::array<int16_t, 16 * 128> programMap;
+        std::array<ProgramAction, 16 * 128> programActions {};
 
-        Graph() { midiMap.fill(-1); }
+        Graph()
+        {
+            midiMap.fill(-1);
+            programMap.fill(-1);
+        }
 
         template <typename F>
         void forEachNode(F&& f) const
@@ -226,6 +244,8 @@ private:
     bool fSongPlaying = false; // the host transport plays; fSongBeat is the position at the current chunk's start
     double fSongBeat = 0.0;
     uint32_t fCcCount = 0;
+    uint32_t fProgramCount = 0;
+    int fPressed = -1; // a footswitch control a Program Change pressed: back to 0 after this process() call
     float fTunerMuteMix = 0.0f; // 1 = guitar muted by the tuner
     bool fTunerOn = false;
     std::array<SlotState, kMaxBlocks> fSlots {};

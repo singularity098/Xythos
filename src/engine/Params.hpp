@@ -141,6 +141,17 @@ enum LaterParam : uint32_t {
     kParamLooperDelete,
     kParamLooperStart,
 
+    // MIDI Program Change (owner, 2026-11-02: footswitches like the M-Vave Chocolate send only those), outputs,
+    // hidden. The DSP reports every Program Change as channel * 128 + program in MIDI Last Program and bumps MIDI
+    // Program Count, for MIDI learn as with CCs; a learned one sets its parameter to MIDI Program Value, which the
+    // UI passes on to the host in formats where the DSP can't. When the DSP has loaded a preset for a Program Change
+    // (Settings::programPresets), Preset Program says so: count * 128 + program, the count bumped each time.
+    // (the count comes last: hosts tend to report changes in index order, and the UI acts on the count)
+    kParamMidiLastProgram,
+    kParamMidiProgramValue,
+    kParamMidiProgramCount,
+    kParamPresetProgram,
+
     kParamCount
 };
 
@@ -182,6 +193,16 @@ constexpr bool isMidiMappable(uint32_t index)
 {
     return index < kParamInPeakL || isSlotParam(index) || (index >= kParamLooperBase && index < kParamLooperEnd);
 }
+
+// What a learned Program Change does to a parameter: nothing (a knob has no use for one), flip a switch, or press a
+// footswitch control (1 for one buffer, then 0 again: the looper's Rec/Dub, Play/Stop, Clear and Tap)
+enum class ProgramAction : uint8_t { None, Flip, Press };
+
+// For parameters outside the slots; a slot's depends on its block (ChainState::programAction())
+ProgramAction globalProgramAction(uint32_t index);
+
+// The value a flip sets a parameter at `current` to (a slot parameter's is normalized)
+float flippedValue(uint32_t index, float current);
 
 enum ParamFlags : uint32_t {
     kParamFlagNone    = 0,

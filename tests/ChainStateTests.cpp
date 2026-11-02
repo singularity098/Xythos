@@ -5,6 +5,8 @@
 
 #include "TestSupport.hpp"
 #include "state/ChainState.hpp"
+#include "engine/BlockRegistry.hpp"
+#include "engine/looper/Looper.hpp"
 
 using namespace xythos;
 
@@ -111,6 +113,54 @@ TEST_CASE("MIDI mappings and the preset name round-trip and validate")
     // outputs can't be mapped
     chain.midi.push_back({ 0, 1, kParamOutPeakL });
     CHECK_FALSE(chain.validate(testing::testRegistry()));
+}
+
+TEST_CASE("Program Change mappings round-trip, sit beside CCs, and only switch things")
+{
+    ChainState chain;
+    chain.blocks.push_back({ "test.gain", 0 });
+    chain.blocks.push_back({ "looper", 1 });
+    chain.setMidiMapping({ 0, 3, slotBypassParam(0), true }); // PC 3 -> the gain block on/off
+    chain.setMidiMapping({ 0, 3, slotParam(0, 0) });          // CC 3 is another message: both stay
+    REQUIRE(chain.midi.size() == 2);
+    CHECK(chain.midiMappingFor(slotBypassParam(0))->program);
+    CHECK_FALSE(chain.midiMappingFor(slotParam(0, 0))->program);
+
+    const std::optional<ChainState> back = ChainState::fromJson(chain.toJson());
+    REQUIRE(back);
+    CHECK(*back == chain);
+    // a CC mapping's JSON is as before (no "pc")
+    CHECK(chain.toJson().find("\"pc\":true") != std::string::npos);
+    ChainState ccOnly;
+    ccOnly.setMidiMapping({ 0, 7, kParamOutput });
+    CHECK(ccOnly.toJson().find("pc") == std::string::npos);
+
+    // the same PC again takes it from the other parameter
+    chain.setMidiMapping({ 0, 3, kParamLimiter, true });
+    CHECK(chain.midiMappingFor(slotBypassParam(0)) == nullptr);
+    CHECK(chain.midiMappingFor(slotParam(0, 0)) != nullptr);
+
+    // what a Program Change does: bypass and switches flip, footswitch controls are pressed, knobs take none
+    const BlockRegistry& registry = BlockRegistry::builtin();
+    ChainState looper;
+    looper.blocks.push_back({ "looper", 4 });
+    CHECK(looper.programAction(slotBypassParam(4), registry) == ProgramAction::Flip);
+    CHECK(looper.programAction(slotParam(4, 0), registry) == ProgramAction::Press);  // Rec/Dub
+    CHECK(looper.programAction(slotParam(4, 5), registry) == ProgramAction::Flip);   // Reverse
+    CHECK(looper.programAction(slotParam(4, 3), registry) == ProgramAction::None);   // Level
+    CHECK(looper.programAction(slotParam(4, 7), registry) == ProgramAction::None);   // Mode (a choice)
+    CHECK(looper.programAction(slotBypassParam(5), registry) == ProgramAction::None); // an empty slot
+    CHECK(looper.programAction(kParamLimiter, registry) == ProgramAction::Flip);
+    CHECK(looper.programAction(kParamInput, registry) == ProgramAction::None);
+    CHECK(looper.programAction(looperParam(kLooperParamRecDub), registry) == ProgramAction::Press);
+    CHECK(looper.programAction(looperParam(kLooperParamTap), registry) == ProgramAction::Press);
+    CHECK(looper.programAction(looperParam(kLooperParamReverse), registry) == ProgramAction::Flip);
+    CHECK(looper.programAction(looperParam(kLooperParamBpm), registry) == ProgramAction::None);
+    CHECK(looper.programAction(kParamOutPeakL, registry) == ProgramAction::None);
+
+    CHECK(flippedValue(slotBypassParam(0), 0.0f) == 1.0f);
+    CHECK(flippedValue(slotBypassParam(0), 1.0f) == 0.0f);
+    CHECK(flippedValue(kParamLimiter, 1.0f) == 0.0f);
 }
 
 namespace {

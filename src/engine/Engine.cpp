@@ -209,7 +209,19 @@ bool Engine::setChain(const ChainState& chain, std::string* error, std::vector<i
 
     fCache = std::move(cache);
     for (const MidiMapping& mapping : chain.midi)
-        graph->midiMap[mapping.channel * 128 + mapping.cc] = static_cast<int16_t>(mapping.param);
+    {
+        const int key = mapping.channel * 128 + mapping.cc;
+        if (!mapping.program)
+        {
+            graph->midiMap[key] = static_cast<int16_t>(mapping.param);
+            continue;
+        }
+        const ProgramAction action = chain.programAction(mapping.param, fRegistry);
+        if (action == ProgramAction::None)
+            continue; // a Program Change can't turn a knob
+        graph->programMap[key] = static_cast<int16_t>(mapping.param);
+        graph->programActions[key] = action;
+    }
     updateLatency(*graph);
 
     if (graph->split && !graph->branchB.empty() && fParallel.load(std::memory_order_relaxed))
@@ -286,6 +298,43 @@ Engine::CcResult Engine::midiCc(int channel, int cc, int value)
     return result;
 }
 
+Engine::ProgramResult Engine::midiProgram(int channel, int program)
+{
+    ProgramResult result;
+    if (channel < 0 || channel > 15 || program < 0 || program > 127)
+        return result;
+
+    fProgramCount = (fProgramCount + 1) % (1u << 24);
+    fParams[kParamMidiLastProgram].store(static_cast<float>(channel * 128 + program), std::memory_order_relaxed);
+    fParams[kParamMidiProgramCount].store(static_cast<float>(fProgramCount), std::memory_order_relaxed);
+
+    // While learning, it only teaches
+    if (param(kParamMidiLearn) >= 0.5f)
+    {
+        result.mapped = true;
+        return result;
+    }
+
+    const Graph* graph = fNext ? fNext : fActive;
+    const int key = channel * 128 + program;
+    const int index = graph->programMap[static_cast<size_t>(key)];
+    if (index < 0)
+        return result;
+    result.mapped = true;
+    if (graph->programActions[static_cast<size_t>(key)] == ProgramAction::Press)
+    {
+        fParams[index].store(1.0f, std::memory_order_relaxed);
+        fPressed = index;
+        return result;
+    }
+    const float v = flippedValue(static_cast<uint32_t>(index), param(static_cast<uint32_t>(index)));
+    fParams[index].store(v, std::memory_order_relaxed);
+    fParams[kParamMidiProgramValue].store(v, std::memory_order_relaxed);
+    result.param = index;
+    result.value = v;
+    return result;
+}
+
 void Engine::process(const float* const* inputs, float* const* outputs, uint32_t frames,
                      const Transport* transport)
 {
@@ -299,6 +348,12 @@ void Engine::process(const float* const* inputs, float* const* outputs, uint32_t
         processChunk(in, out, n, transport, done);
         fTime += n;
         done += n;
+    }
+    // a footswitch control a Program Change pressed has been seen held for a buffer: let it go
+    if (fPressed >= 0 && frames > 0)
+    {
+        fParams[static_cast<size_t>(fPressed)].store(0.0f, std::memory_order_relaxed);
+        fPressed = -1;
     }
 
     const Metronome::Status& metronome = fMetronome.status();

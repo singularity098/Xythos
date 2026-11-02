@@ -32,7 +32,11 @@ std::string ChainState::toJson() const
     }
     json midiJson = json::array();
     for (const MidiMapping& mapping : midi)
+    {
         midiJson.push_back({ { "channel", mapping.channel }, { "cc", mapping.cc }, { "param", mapping.param } });
+        if (mapping.program)
+            midiJson.back()["pc"] = true;
+    }
     json root { { "version", kVersion }, { "blocks", blocksJson } };
     if (!midi.empty())
         root["midi"] = midiJson;
@@ -85,7 +89,7 @@ std::optional<ChainState> ChainState::fromJson(std::string_view text, std::strin
             for (const json& item : *midi)
             {
                 state.midi.push_back({ jsonInt<int>(item.at("channel")), jsonInt<int>(item.at("cc")),
-                                       jsonInt<uint32_t>(item.at("param")) });
+                                       jsonInt<uint32_t>(item.at("param")), item.value("pc", false) });
             }
         }
         state.preset = root.value("preset", std::string());
@@ -149,7 +153,8 @@ bool ChainState::validate(const BlockRegistry& registry, std::string* error) con
 void ChainState::setMidiMapping(MidiMapping mapping)
 {
     std::erase_if(midi, [&mapping](const MidiMapping& m) {
-        return (m.channel == mapping.channel && m.cc == mapping.cc) || m.param == mapping.param;
+        return (m.channel == mapping.channel && m.cc == mapping.cc && m.program == mapping.program)
+               || m.param == mapping.param;
     });
     midi.push_back(mapping);
 }
@@ -157,6 +162,32 @@ void ChainState::setMidiMapping(MidiMapping mapping)
 void ChainState::clearMidiMappings(uint32_t param)
 {
     std::erase_if(midi, [param](const MidiMapping& m) { return m.param == param; });
+}
+
+ProgramAction ChainState::programAction(uint32_t param, const BlockRegistry& registry) const
+{
+    if (!isSlotParam(param))
+        return globalProgramAction(param);
+    const uint32_t offset = param - kSlotParamBase;
+    const int slot = static_cast<int>(offset / kSlotParamCount);
+    const int p = static_cast<int>(offset % kSlotParamCount) - 1;
+    for (const BlockState& block : blocks)
+    {
+        if (block.slot != slot)
+            continue;
+        if (p < 0)
+            return ProgramAction::Flip; // bypass
+        const BlockDescriptor* type = registry.find(block.typeId);
+        if (type == nullptr || p >= static_cast<int>(type->params.size()))
+            return ProgramAction::None;
+        switch (type->params[static_cast<size_t>(p)].scale)
+        {
+        case ParamScale::Toggle: return ProgramAction::Flip;
+        case ParamScale::Momentary: return ProgramAction::Press;
+        default: return ProgramAction::None;
+        }
+    }
+    return ProgramAction::None;
 }
 
 const MidiMapping* ChainState::midiMappingFor(uint32_t param) const

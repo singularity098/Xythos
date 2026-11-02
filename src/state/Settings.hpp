@@ -42,6 +42,17 @@ struct Settings {
     // The user's own defaults for new blocks (the block panel's Set as Default; owner, 2026-10-31): block typeId ->
     // control name -> value, in the control's units. Controls not listed keep the type's default.
     std::map<std::string, std::map<std::string, float>> blockDefaults;
+    // MIDI Program Change -> preset (Manage Presets; owner, 2026-11-02): a footswitch sending Program Change n loads
+    // the preset at programPresets[n] (a path, UTF-8), on any MIDI channel, with or without the plugin window open.
+    // Programs are 0..127 as sent; at most one preset per program. A Program Change learned onto a control in the
+    // chain's MIDI map wins over this.
+    std::map<int, std::string> programPresets;
+
+    // The program a preset answers to, or -1
+    int programFor(const std::string& presetPath) const;
+    // Assigns `program` (0..127) to the preset, taking it from any other preset and replacing the preset's old one;
+    // -1 removes the preset's assignment
+    void assignProgram(const std::string& presetPath, int program);
 
     static constexpr size_t kMaxRecentPresets = 8;
     void addRecentPreset(const std::string& path);

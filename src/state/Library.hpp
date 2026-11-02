@@ -88,6 +88,8 @@ public:
 
     // The cached entry for `path`, if its size and modification time still match
     const LibraryEntry* find(const std::string& path, uint64_t size, int64_t mtime) const;
+    // A file with this content hash from the last scan, if any (it may have gone since)
+    const LibraryEntry* findByHash(const std::string& hash) const;
     void put(const LibraryEntry& entry) { fEntries[entry.path] = entry; }
     void clear() { fEntries.clear(); }
     size_t size() const { return fEntries.size(); }

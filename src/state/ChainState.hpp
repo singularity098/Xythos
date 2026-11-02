@@ -75,11 +75,14 @@ struct BlockState {
     bool operator==(const BlockState&) const = default;
 };
 
-// A MIDI CC mapped to a host parameter (MIDI learn)
+// A MIDI CC, or a Program Change, mapped to a host parameter (MIDI learn). A CC sets the parameter from its value;
+// a Program Change (a footswitch that only sends those; owner, 2026-11-02) flips a switch (a block's bypass, the
+// tuner, ...) or presses a footswitch control (the looper's Rec/Dub) each time it comes.
 struct MidiMapping {
     int channel = 0; // 0..15
-    int cc = 0;      // 0..127
+    int cc = 0;      // 0..127: the controller, or the program for a Program Change
     uint32_t param = 0; // host parameter index (Params.hpp)
+    bool program = false; // a Program Change, not a CC
 
     bool operator==(const MidiMapping&) const = default;
 };
@@ -128,6 +131,9 @@ struct ChainState {
     void setMidiMapping(MidiMapping mapping);
     void clearMidiMappings(uint32_t param);
     const MidiMapping* midiMappingFor(uint32_t param) const;
+    // What a learned Program Change does to `param`: a block's bypass and its switches flip, its footswitch
+    // controls (Momentary) are pressed, its knobs and choices take none
+    ProgramAction programAction(uint32_t param, const BlockRegistry& registry) const;
 
     // Editing helpers. Positions are within a section; they keep the split's range and `branch` tags consistent.
     Section sectionOf(int index) const;

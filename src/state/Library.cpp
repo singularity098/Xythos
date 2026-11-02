@@ -381,6 +381,18 @@ bool LibraryIndex::save(const fs::path& path) const
     return writeFileAtomic(path, json { { "version", kIndexVersion }, { "entries", entries } }.dump());
 }
 
+const LibraryEntry* LibraryIndex::findByHash(const std::string& hash) const
+{
+    if (hash.empty())
+        return nullptr;
+    for (const auto& [path, entry] : fEntries)
+    {
+        if (entry.hash == hash)
+            return &entry;
+    }
+    return nullptr;
+}
+
 const LibraryEntry* LibraryIndex::find(const std::string& path, uint64_t size, int64_t mtime) const
 {
     const auto it = fEntries.find(path);

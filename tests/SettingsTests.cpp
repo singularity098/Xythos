@@ -30,6 +30,7 @@ TEST_CASE("settings round-trip through JSON and a file")
     settings.pedalImages = { { "ffeeddccbbaa99887766554433221100", "pedal-7" } };
     settings.ampImages = { { "ffeeddccbbaa99887766554433221100", "amp-12" } };
     settings.blockDefaults = { { "looper", { { "Latency", 14.0f }, { "BPM", 96.0f } } }, { "delay", { { "Mix", 30.5f } } } };
+    settings.programPresets = { { 0, "/presets/Clean.xythos" }, { 127, "/presets/Lead/Solo.xythos" } };
 
     CHECK(Settings::fromJson(settings.toJson()) == settings);
 
@@ -88,4 +89,30 @@ TEST_CASE("recent presets: most recent first, no duplicates, bounded")
     CHECK(settings.recentPresets[0] == "/p5");
     CHECK(settings.recentPresets[1] == "/p11");
     CHECK(std::count(settings.recentPresets.begin(), settings.recentPresets.end(), "/p5") == 1);
+}
+
+TEST_CASE("a Program Change loads one preset, and a preset answers one Program Change")
+{
+    Settings settings;
+    settings.assignProgram("/p/A.xythos", 3);
+    settings.assignProgram("/p/B.xythos", 4);
+    CHECK(settings.programFor("/p/A.xythos") == 3);
+    CHECK(settings.programFor("/p/C.xythos") == -1);
+
+    settings.assignProgram("/p/B.xythos", 3); // takes 3 from A, gives up 4
+    CHECK(settings.programFor("/p/A.xythos") == -1);
+    CHECK(settings.programFor("/p/B.xythos") == 3);
+    CHECK(settings.programPresets.size() == 1);
+
+    settings.assignProgram("/p/B.xythos", -1);
+    CHECK(settings.programPresets.empty());
+    settings.assignProgram("/p/B.xythos", 128); // out of range: nothing
+    CHECK(settings.programPresets.empty());
+
+    // a hand-edited file: what's wrong is left out, the rest kept
+    const Settings read = Settings::fromJson(R"({ "programPresets": [ { "program": 5, "path": "/ok.xythos" },
+        { "program": 200, "path": "/x" }, { "program": -1, "path": "/x" }, { "program": 6 }, "junk",
+        { "program": 1e30, "path": "/x" }, { "program": 7, "path": 3 } ], "parallel": false })");
+    CHECK(read.programPresets == std::map<int, std::string> { { 5, "/ok.xythos" } });
+    CHECK_FALSE(read.parallel);
 }

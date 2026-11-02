@@ -3,6 +3,8 @@
 
 #include "engine/Params.hpp"
 
+#include "engine/looper/Looper.hpp"
+
 #include <cstdio>
 
 namespace xythos {
@@ -142,6 +144,10 @@ const GlobalParamSpec kNewestParams[] = {
     { "Looper Exported",     "looper_exported", "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
     { "Looper Delete",       "looper_delete",   "",    0.0f,   65535.0f, 0.0f, kParamFlagInteger | kParamFlagHidden },
     { "Looper Start",        "looper_start",    "",    0.0f,   4004003.0f, 0.0f, kParamFlagInteger | kParamFlagHidden },
+    { "MIDI Last Program",   "midi_last_pc",    "",    0.0f,   2047.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "MIDI Program Value",  "midi_pc_value",   "",    -1000.0f, 1000.0f, 0.0f, kParamFlagOutput | kParamFlagHidden },
+    { "MIDI Program Count",  "midi_pc_count",   "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
+    { "Preset Program",      "preset_pc",       "",    0.0f,   16777215.0f, 0.0f, kParamFlagOutput | kParamFlagInteger | kParamFlagHidden },
 };
 static_assert(sizeof(kNewestParams) / sizeof(kNewestParams[0]) == kParamCount - kParamSlotLatchEnd);
 
@@ -182,6 +188,25 @@ const GlobalParamSpec& globalParamSpec(uint32_t index)
         return index < kParamMergeBalance ? kMidiParams[index - kParamMidiLearn] : kToolParams[index - kParamMergeBalance];
     }
     return index >= kFirstLaterParam ? kLaterParams[index - kFirstLaterParam] : kGlobalParams[index];
+}
+
+ProgramAction globalProgramAction(uint32_t index)
+{
+    if (isSlotParam(index) || index >= kParamCount || !isMidiMappable(index))
+        return ProgramAction::None;
+    // the looper's footswitches
+    if (index == looperParam(kLooperParamRecDub) || index == looperParam(kLooperParamPlayStop)
+        || index == looperParam(kLooperParamClear) || index == looperParam(kLooperParamTap))
+        return ProgramAction::Press;
+    return (globalParamSpec(index).flags & kParamFlagToggle) ? ProgramAction::Flip : ProgramAction::None;
+}
+
+float flippedValue(uint32_t index, float current)
+{
+    if (isSlotParam(index))
+        return current >= 0.5f ? 0.0f : 1.0f;
+    const GlobalParamSpec& spec = globalParamSpec(index);
+    return current >= 0.5f * (spec.min + spec.max) ? spec.min : spec.max;
 }
 
 float midiCcToValue(uint32_t index, int ccValue)

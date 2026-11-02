@@ -12,6 +12,15 @@ namespace xythos {
 
 using nlohmann::json;
 
+// Stored as [{ "program": n, "path": "..." }], since JSON object keys are strings
+static json programPresetsJson(const std::map<int, std::string>& programs)
+{
+    json list = json::array();
+    for (const auto& [program, path] : programs)
+        list.push_back({ { "program", program }, { "path", path } });
+    return list;
+}
+
 std::string Settings::toJson() const
 {
     return json {
@@ -36,6 +45,7 @@ std::string Settings::toJson() const
         { "pedalImages", pedalImages },
         { "ampImages", ampImages },
         { "blockDefaults", blockDefaults },
+        { "programPresets", programPresetsJson(programPresets) },
     }.dump(2);
 }
 
@@ -82,6 +92,22 @@ Settings Settings::fromJson(std::string_view text)
         get("cabImages", settings.cabImages);
         get("pedalImages", settings.pedalImages);
         get("ampImages", settings.ampImages);
+        if (const auto programs = root.find("programPresets"); programs != root.end() && programs->is_array())
+        {
+            for (const json& item : *programs)
+            {
+                try
+                {
+                    const int program = jsonInt<int>(item.at("program"));
+                    const std::string path = item.at("path").get<std::string>();
+                    if (program >= 0 && program <= 127 && !path.empty())
+                        settings.programPresets[program] = path;
+                }
+                catch (const json::exception&)
+                {
+                }
+            }
+        }
         if (const auto defaults = root.find("blockDefaults"); defaults != root.end())
         {
             try
@@ -115,6 +141,23 @@ void Settings::addRecentPreset(const std::string& path)
     recentPresets.insert(recentPresets.begin(), path);
     if (recentPresets.size() > kMaxRecentPresets)
         recentPresets.resize(kMaxRecentPresets);
+}
+
+int Settings::programFor(const std::string& presetPath) const
+{
+    for (const auto& [program, path] : programPresets)
+    {
+        if (path == presetPath)
+            return program;
+    }
+    return -1;
+}
+
+void Settings::assignProgram(const std::string& presetPath, int program)
+{
+    std::erase_if(programPresets, [&presetPath](const auto& entry) { return entry.second == presetPath; });
+    if (program >= 0 && program <= 127 && !presetPath.empty())
+        programPresets[program] = presetPath;
 }
 
 std::filesystem::path Settings::defaultPath()

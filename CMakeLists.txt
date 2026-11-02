@@ -190,6 +190,7 @@ add_library(xythos-engine STATIC
   src/engine/tuner/Tuner.cpp
   src/engine/Params.cpp
   src/state/ChainExchange.cpp
+  src/state/ChainMigration.cpp
   src/state/ChainState.cpp
   src/state/Ink.cpp
   src/state/Library.cpp

@@ -226,6 +226,20 @@ bool savePresetFile(const std::string& path, const Preset& preset, bool embedFil
     return true;
 }
 
+std::optional<Preset> readPresetFile(const std::string& path, std::string* error)
+{
+    const std::optional<std::string> text = readLibraryFile(path + std::string(kArchiveSeparator) + kPresetEntry);
+    if (!text)
+    {
+        fail(error, "not a Xythos preset: " + path);
+        return std::nullopt;
+    }
+    std::optional<Preset> preset = Preset::fromJson(*text, error);
+    if (preset)
+        preset->chain.preset = path;
+    return preset;
+}
+
 std::optional<LoadedPreset> loadPresetFile(const std::string& path,
                                            const std::function<std::string(const std::string& hash)>& findByHash,
                                            std::string* error)

@@ -32,6 +32,7 @@
 #include "engine/blocks/LooperBlock.hpp"
 #include "engine/blocks/NamBlock.hpp"
 #include "state/ChainExchange.hpp"
+#include "state/ChainMigration.hpp"
 #include "state/ChainState.hpp"
 #include "state/Ink.hpp"
 #include "state/Library.hpp"
@@ -269,6 +270,7 @@ enum class Hit {
     PresetRow,      // Presets dialog: index = row in fPresetRows
     PresetDefault,  // index = row in fPresetRows: make it the default (again: no default)
     PresetDelete,   // index = row in fPresetRows: the first click asks, the second deletes
+    PresetProgram,  // index = row in fPresetRows: learn the Program Change that loads it (again: none)
     BlockImage,     // the block panel's Image button: index = position in the chain
     SetDefaults,    // the block panel's Set as Default: index = position in the chain
     ClearDefaults,  // ... and Clear Default: index = position in the chain
@@ -759,6 +761,10 @@ protected:
             finishMidiLearn();
         else if (index == kParamMidiCcCount && fLearnParam < 0)
             forwardMidiCc();
+        if (index == kParamMidiProgramCount)
+            midiProgramReported(value);
+        if (index == kParamPresetProgram)
+            presetProgramReported(value);
         if (index == kParamTunerFrequency && value > 0.0f)
             tunerReading(value);
         if (index == kParamMetroBeatCount)
@@ -1367,6 +1373,24 @@ protected:
             }
             return true;
 
+        case Hit::PresetProgram:
+            if (hit->index < static_cast<int>(fPresetRows.size()))
+            {
+                const std::string path = fPresetRows[hit->index].path;
+                if (fLearnPreset == path)
+                {
+                    // a second click: no Program Change for it
+                    cancelPresetLearn();
+                    if (fSettings.programFor(path) >= 0)
+                        updateSettings([&path](Settings& settings) { settings.assignProgram(path, -1); });
+                }
+                else
+                {
+                    startPresetLearn(path);
+                }
+            }
+            return true;
+
         case Hit::PresetDelete:
             if (hit->index < static_cast<int>(fPresetRows.size()))
             {
@@ -1380,8 +1404,13 @@ protected:
                 fPresetDeleteArmed.clear();
                 if (deletePreset(presetsDir(), path))
                 {
-                    if (fSettings.defaultPreset == path)
-                        updateSettings([](Settings& settings) { settings.defaultPreset.clear(); });
+                    if (fLearnPreset == path)
+                        cancelPresetLearn();
+                    updateSettings([&path](Settings& settings) {
+                        if (settings.defaultPreset == path)
+                            settings.defaultPreset.clear();
+                        settings.assignProgram(path, -1);
+                    });
                 }
                 else
                 {
@@ -1788,6 +1817,11 @@ protected:
         if (ev.key == kKeyEscape && fLearnParam >= 0)
         {
             cancelMidiLearn();
+            return true;
+        }
+        if (ev.key == kKeyEscape && !fLearnPreset.empty())
+        {
+            cancelPresetLearn();
             return true;
         }
         if (ev.key == kKeyEscape && fDialog != Dialog::None)
@@ -2555,88 +2589,6 @@ private:
         }
     }
 
-    // Controls added to a block type after it was released: blocks saved before them lack the config key, and
-    // their new controls hold the host's unused values (0), so the DSP ignores them until the key is there
-    struct Migration {
-        const BlockDescriptor* type;
-        const char* key;
-        int first, last; // the controls added
-    };
-    static constexpr Migration kMigrations[] = {
-        { &kNamBlockDescriptor, kNamToneKey, kNamParamBass, kNamParamTreble },             // NamBlock.hpp
-    };
-
-    // A block's migration: the slot and which one (a type can have several)
-    struct MigratedSlot {
-        int slot;
-        const Migration* migration;
-    };
-
-    // Sets a migrated block's new controls to their defaults (NAM tone: 0 dB, flat)
-    static void setMigratedDefaults(BlockState& block, const Migration& migration)
-    {
-        for (int p = migration.first; p <= migration.last; ++p)
-        {
-            const ParamSpec& spec = migration.type->params[p];
-            block.params[p] = spec.toNormalized(spec.def);
-        }
-    }
-
-    // Blocks from before their type's later controls (kMigrations) get them at their defaults, and the config marks
-    // them, so the DSP applies them. Returns the migrations done.
-    static std::vector<MigratedSlot> migrateBlocks(ChainState& chain)
-    {
-        std::vector<MigratedSlot> changed;
-        for (BlockState& block : chain.blocks)
-        {
-            for (const Migration& migration : kMigrations)
-            {
-                if (block.typeId != migration.type->typeId || block.config.contains(migration.key))
-                    continue;
-                setMigratedDefaults(block, migration);
-                block.config[migration.key] = true;
-                changed.push_back({ static_cast<int>(block.slot), &migration });
-            }
-        }
-        return changed;
-    }
-
-    // The retired Looper block's settings as the global looper's, in LooperParam order (real values); the
-    // footswitches are left out
-    using LooperSettings = std::array<float, kLooperParamCount>;
-
-    // Takes Looper blocks out of a chain (owner, 2026-11-01: the looper is global now): MIDI mappings to their
-    // controls move to the global looper's, and the first one's settings are returned (as it had them: one saved
-    // before Count In or Latency existed gets Free mode and the default latency, as the DSP ran it)
-    static std::optional<LooperSettings> retireLoopers(ChainState& chain)
-    {
-        std::optional<LooperSettings> settings;
-        for (int i = static_cast<int>(chain.blocks.size()) - 1; i >= 0; --i)
-        {
-            const BlockState& block = chain.blocks[static_cast<size_t>(i)];
-            if (block.typeId != kLooperBlockDescriptor.typeId)
-                continue;
-            LooperSettings values {};
-            for (int p = 0; p < kLooperParamCount; ++p)
-                values[static_cast<size_t>(p)] = kLooperBlockDescriptor.params[p].toValue(block.params[p]);
-            if (!block.config.contains(kLooperCountInKey))
-            {
-                for (int p = kLooperParamMode; p <= kLooperParamClick; ++p)
-                    values[static_cast<size_t>(p)] = kLooperBlockDescriptor.params[p].def;
-                values[kLooperParamMode] = 1.0f; // it was a Free looper
-            }
-            if (!block.config.contains(kLooperLatencyKey))
-                values[kLooperParamLatency] = kLooperBlockDescriptor.params[kLooperParamLatency].def;
-            settings = values; // the first one's, as the loop goes from the last to the first
-            for (MidiMapping& mapping : chain.midi)
-                for (int p = 0; p < kLooperParamCount; ++p)
-                    if (mapping.param == slotParam(block.slot, p))
-                        mapping.param = looperParam(p);
-            chain.remove(i);
-        }
-        return settings;
-    }
-
     // A chain from the host (a project) had a Looper block: the global looper takes its settings, and the DSP gets
     // the chain without it (in the idle callback, once the host is connected)
     void retireLoopersFromHost()
@@ -3025,6 +2977,136 @@ private:
         repaint();
     }
 
+    // The DSP reported a Program Change (MIDI Program Count). The first report is only the count so far (the UI
+    // just opened), not a new one.
+    void midiProgramReported(float count)
+    {
+        const bool first = fSeenProgramCount < 0.0f;
+        if (count == fSeenProgramCount)
+            return;
+        fSeenProgramCount = count;
+        if (first)
+            return;
+        if (fLearnParam >= 0)
+            finishProgramLearn();
+        else if (!fLearnPreset.empty())
+            finishPresetLearn();
+        else
+            forwardMidiProgram();
+    }
+
+    // MIDI learn took a Program Change: it flips a switch or presses a footswitch control each time it comes
+    void finishProgramLearn()
+    {
+        const int value = static_cast<int>(fParams[kParamMidiLastProgram]);
+        const MidiMapping mapping { value / 128, value % 128, static_cast<uint32_t>(fLearnParam), true };
+        if (fChain.programAction(mapping.param, BlockRegistry::builtin()) == ProgramAction::None)
+        {
+            cancelMidiLearn();
+            showToast("A Program Change can only switch things on and off. Use a CC (or an expression pedal) "
+                      "for knobs.");
+            return;
+        }
+        beginEdit();
+        fChain.setMidiMapping(mapping);
+        cancelMidiLearn();
+        sendChain();
+    }
+
+    // The DSP flipped a switch for a learned Program Change: the host gets the value too (LV2 mostly can't take it
+    // from the DSP), and the screen and chain follow
+    void forwardMidiProgram()
+    {
+        const int key = static_cast<int>(fParams[kParamMidiLastProgram]);
+        for (const MidiMapping& mapping : fChain.midi)
+        {
+            if (!mapping.program || mapping.channel * 128 + mapping.cc != key)
+                continue;
+            if (fChain.programAction(mapping.param, BlockRegistry::builtin()) != ProgramAction::Flip)
+                return; // a footswitch press: the DSP let it go again by itself
+            const float value = fParams[kParamMidiProgramValue];
+            setHostParameter(mapping.param, value);
+            if (isSlot(mapping.param))
+                syncChainValue(mapping.param, value);
+            repaint();
+            return;
+        }
+    }
+
+    // Manage Presets' Program button: the next Program Change loads this preset from now on
+    void startPresetLearn(const std::string& path)
+    {
+        if (fLearnParam >= 0)
+            cancelMidiLearn();
+        fLearnPreset = path;
+        setHostParameter(kParamMidiLearn, 1.0f); // meanwhile the DSP acts on no Program Change
+        repaint();
+    }
+
+    void finishPresetLearn()
+    {
+        const int program = static_cast<int>(fParams[kParamMidiLastProgram]) % 128;
+        const std::string path = fLearnPreset;
+        cancelPresetLearn();
+        updateSettings([&](Settings& settings) { settings.assignProgram(path, program); });
+        showToast("Program Change " + std::to_string(program) + " now loads " + fileStem(path));
+    }
+
+    void cancelPresetLearn()
+    {
+        if (fLearnPreset.empty())
+            return;
+        fLearnPreset.clear();
+        setHostParameter(kParamMidiLearn, 0.0f);
+        repaint();
+    }
+
+    // The DSP loaded a preset for a footswitch's Program Change (Preset Program). It does that itself, so it works
+    // with the window closed; an open UI takes the chain from the exchange file as an undoable step, and sets the
+    // host's values too, which LV2 mostly can't take from the DSP. The first report is the count so far.
+    void presetProgramReported(float value)
+    {
+        const bool first = fSeenPresetProgram < 0.0f;
+        if (value == fSeenPresetProgram)
+            return;
+        fSeenPresetProgram = value;
+        if (first || fInstanceId == 0)
+            return;
+        const std::optional<std::string> json = readChainExchange(fInstanceId);
+        std::optional<ChainState> chain = json ? ChainState::fromJson(*json) : std::nullopt;
+        if (!chain)
+            return;
+        if (fDialog == Dialog::AddBlock)
+            closeDialog(); // its preview is of the chain being replaced
+
+        beginEdit();
+        const std::optional<Preset> preset = readPresetFile(chain->preset);
+        for (uint32_t index : presetGlobalParams())
+        {
+            const GlobalParamSpec& spec = globalParamSpec(index);
+            float v = spec.def;
+            if (preset)
+                if (const auto it = preset->globals.find(spec.symbol); it != preset->globals.end())
+                    v = it->second;
+            setHostParameter(index, v);
+        }
+        chain->restoreLatches = false;
+        fChain = std::move(*chain);
+        for (const BlockState& block : fChain.blocks)
+        {
+            setHostParameter(slotBypassParam(block.slot), block.bypass ? 1.0f : 0.0f);
+            for (int p = 0; p < kParamsPerSlot; ++p)
+                setHostParameter(slotParam(block.slot, p), block.params[p]);
+        }
+        fSavedChain = fChain;
+        fSelected = fChain.blocks.empty() ? -1 : 0;
+        fMergeSelected = false;
+        chainChanged();
+        showToast("Opened " + presetName() + " (Program Change "
+                  + std::to_string(static_cast<int>(value) % 128) + ")");
+        repaint();
+    }
+
     std::string paramName(uint32_t index) const
     {
         if (!isSlot(index))
@@ -3042,7 +3124,8 @@ private:
 
     static std::string ccText(const MidiMapping& mapping)
     {
-        return "CC " + std::to_string(mapping.cc) + " (ch " + std::to_string(mapping.channel + 1) + ")";
+        return (mapping.program ? "PC " : "CC ") + std::to_string(mapping.cc) + " (ch "
+               + std::to_string(mapping.channel + 1) + ")";
     }
 
     void openMenu(float x, float y, std::vector<MenuEntry> entries, float width = 300.0f)
@@ -3460,6 +3543,7 @@ private:
     {
         if (fDialog == Dialog::AddBlock)
             cancelPreview();
+        cancelPresetLearn();
         blurField(true);
         if (fDialog == Dialog::InkPicker)
         {
@@ -9765,12 +9849,21 @@ private:
 
             const bool isDefault = row.path == fSettings.defaultPreset;
             const bool armed = row.path == fPresetDeleteArmed;
+            const int program = fSettings.programFor(row.path);
+            const bool learning = row.path == fLearnPreset;
             const Rect def { r.x + r.w - 92.0f, r.y + 5.0f, 84.0f, r.h - 10.0f };
             const Rect del { def.x - 92.0f, def.y, 84.0f, def.h };
+            const Rect pc { del.x - 92.0f, def.y, 84.0f, def.h };
+            const bool showProgram = program >= 0 || learning || hover;
             if (isDefault || hover)
                 drawButton(def, "Default", isDefault, theme::accent, Hit::PresetDefault, i);
             if (armed || hover)
                 drawButton(del, armed ? "Delete?" : "Delete", armed, theme::bad, Hit::PresetDelete, i);
+            if (showProgram)
+            {
+                const std::string text = learning ? "Press…" : program >= 0 ? "PC " + std::to_string(program) : "Program";
+                drawButton(pc, text.c_str(), learning || program >= 0, theme::accent, Hit::PresetProgram, i);
+            }
             const float top = std::max(r.y, listY), bottom = std::min(r.y + r.h, listY + listH);
             // a button's hit area, cut to the list
             const auto buttonHit = [&](const Rect& b, Hit kind) {
@@ -9780,19 +9873,24 @@ private:
             };
             if (bottom > top)
             {
-                fHits.push_back({ { r.x, top, r.w - 192.0f, bottom - top }, Hit::PresetRow, i });
+                fHits.push_back({ { r.x, top, r.w - 284.0f, bottom - top }, Hit::PresetRow, i });
                 if (isDefault || hover)
                     buttonHit(def, Hit::PresetDefault);
                 if (armed || hover)
                     buttonHit(del, Hit::PresetDelete);
+                if (showProgram)
+                    buttonHit(pc, Hit::PresetProgram);
             }
         }
         restore();
 
-        label(x + 20.0f, y + h - 20.0f,
-              "Click a preset to load it. The Default preset loads when you add Xythos to a track. "
-              "Delete asks again before it deletes.",
-              theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        const std::string hint =
+            !fLearnPreset.empty()
+                ? "Press the footswitch that should load " + fileStem(fLearnPreset)
+                      + " (it sends a MIDI Program Change). Click the button again to remove it; Esc cancels."
+                : std::string("Click a preset to load it. Default loads when you add Xythos to a track. Program: "
+                              "a footswitch's Program Change loads it. Delete asks again.");
+        label(x + 20.0f, y + h - 20.0f, hint.c_str(), theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
     }
 
     void drawSettingsDialog()
@@ -10352,6 +10450,9 @@ private:
     int fLocateIndex = -1;
     int fLearnParam = -1;
     float fLearnCcCount = 0.0f;
+    std::string fLearnPreset;          // Manage Presets is learning the Program Change for this preset
+    float fSeenProgramCount = -1.0f;   // MIDI Program Count last seen; -1 before the first report
+    float fSeenPresetProgram = -1.0f;  // Preset Program last seen; -1 before the first report
     std::string fToast;
     std::chrono::steady_clock::time_point fToastAt;
     FontId fUiFont = -1;      // Jost Light

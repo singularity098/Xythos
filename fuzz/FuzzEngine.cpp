@@ -60,7 +60,8 @@ ChainState makeChain(fuzz::Input& in)
     }
     const int mappings = in.range(0, 2);
     for (int i = 0; i < mappings; ++i)
-        chain.setMidiMapping({ in.range(0, 15), in.range(0, 127), static_cast<uint32_t>(in.range(0, kParamCount - 1)) });
+        chain.setMidiMapping({ in.range(0, 15), in.range(0, 127), static_cast<uint32_t>(in.range(0, kParamCount - 1)),
+                               in.flag() });
     return chain;
 }
 
@@ -162,6 +163,12 @@ XYTHOS_FUZZ_TARGET(engine)
             break;
         }
         case 5: {
+            if (in.flag())
+            {
+                const Engine::ProgramResult result = engine.midiProgram(in.range(0, 15), in.range(0, 127));
+                FUZZ_CHECK(result.param < static_cast<int>(kParamCount));
+                break;
+            }
             const Engine::CcResult result = engine.midiCc(in.range(0, 15), in.range(0, 127), in.range(0, 127));
             FUZZ_CHECK(result.param < static_cast<int>(kParamCount));
             break;

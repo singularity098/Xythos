@@ -4,12 +4,17 @@
 #include "DistrhoPlugin.hpp"
 
 #include "engine/Engine.hpp"
+#include "engine/BlockRegistry.hpp"
 #include "state/AudioFile.hpp"
 #include "state/ChainExchange.hpp"
+#include "state/ChainMigration.hpp"
+#include "state/Library.hpp"
 #include "state/Paths.hpp"
+#include "state/Preset.hpp"
 #include "state/Settings.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -144,7 +149,8 @@ protected:
     void setParameterValue(const uint32_t index, const float value) override
     {
         if (index == kParamInstanceId || index == kParamMidiLastCc || index == kParamMidiCcCount
-            || index == kParamMidiLastValue)
+            || index == kParamMidiLastValue || index == kParamMidiLastProgram || index == kParamMidiProgramCount
+            || index == kParamMidiProgramValue || index == kParamPresetProgram)
             return; // outputs, owned by the plugin
         fEngine.setParameter(index, value);
     }
@@ -201,15 +207,25 @@ private:
     void runEngine(const float** const inputs, float** const outputs, const uint32_t frames,
                    const MidiEvent* const midiEvents, const uint32_t midiEventCount)
     {
-        // MIDI CCs (learn and mapped controls), applied at the start of the buffer
+        // MIDI CCs and Program Changes (learn and mapped controls), applied at the start of the buffer
         for (uint32_t i = 0; i < midiEventCount; ++i)
         {
             const MidiEvent& event = midiEvents[i];
-            if (event.size != 3 || (event.data[0] & 0xf0) != 0xb0)
-                continue;
-            const Engine::CcResult result = fEngine.midiCc(event.data[0] & 0x0f, event.data[1], event.data[2]);
-            if (result.param >= 0)
-                requestParameterValueChange(static_cast<uint32_t>(result.param), result.value);
+            const uint8_t status = event.data[0] & 0xf0;
+            if (event.size == 3 && status == 0xb0)
+            {
+                const Engine::CcResult result = fEngine.midiCc(event.data[0] & 0x0f, event.data[1], event.data[2]);
+                if (result.param >= 0)
+                    requestParameterValueChange(static_cast<uint32_t>(result.param), result.value);
+            }
+            else if (event.size >= 2 && status == 0xc0)
+            {
+                const Engine::ProgramResult result = fEngine.midiProgram(event.data[0] & 0x0f, event.data[1] & 0x7f);
+                if (result.param >= 0)
+                    requestParameterValueChange(static_cast<uint32_t>(result.param), result.value);
+                else if (!result.mapped)
+                    fPendingProgram.store(event.data[1] & 0x7f, std::memory_order_relaxed); // a preset's, maybe
+            }
         }
 
         // The host's transport: tempo for tempo-synced blocks, and the metronome's DAW sync
@@ -238,6 +254,25 @@ private:
             std::memcpy(event.data, message.data, message.size);
             writeMidiEvent(event);
         });
+
+        // the values a preset loaded for a Program Change set, for the host (requests only work from here)
+        if (fNotifyPending.exchange(false, std::memory_order_acquire))
+        {
+            int sent = 0;
+            for (uint32_t index = 0; index < kParamCount; ++index)
+            {
+                if (!fNotifyHost[index].load(std::memory_order_relaxed))
+                    continue;
+                if (sent == kMaxNotifyPerRun)
+                {
+                    fNotifyPending.store(true, std::memory_order_relaxed); // the rest next time
+                    break;
+                }
+                fNotifyHost[index].store(false, std::memory_order_relaxed);
+                requestParameterValueChange(index, fEngine.getParameter(index));
+                ++sent;
+            }
+        }
 
         const uint32_t latency = fEngine.latency();
         if (latency != fReportedLatency)
@@ -311,6 +346,75 @@ private:
         fEngine.takeChainFault();
     }
 
+    // Whether a library file exists (for a file inside a zip: whether the zip does)
+    static bool libraryFileExists(const std::string& path)
+    {
+        std::error_code ec;
+        const std::optional<ArchivePath> archive = splitArchivePath(path);
+        return std::filesystem::exists(pathFromUtf8(archive ? archive->archive : path), ec);
+    }
+
+    // Non-RT. Sets a parameter for a preset being loaded, and has run() tell the host
+    void setLoadedValue(uint32_t index, float value)
+    {
+        fEngine.setParameter(index, value);
+        fNotifyHost[index].store(true, std::memory_order_relaxed);
+    }
+
+    // Non-RT (the exchange thread). A Program Change no MIDI mapping took: loads the preset assigned to it
+    // (Settings::programPresets), the way the UI opens one, so a footswitch changes presets with the window closed.
+    // An open UI sees Preset Program change and takes the chain from the exchange file.
+    void loadProgramPreset(int program)
+    {
+        const Settings settings = Settings::load();
+        const auto assigned = settings.programPresets.find(program);
+        if (assigned == settings.programPresets.end())
+            return;
+        const std::string& path = assigned->second;
+
+        // a file that moved is found by its content, as the UI does, in the libraries' last scans
+        LibraryIndex nam, ir;
+        nam.load(LibraryIndex::defaultPath(LibraryKind::Nam));
+        ir.load(LibraryIndex::defaultPath(LibraryKind::Ir));
+        std::string error;
+        std::optional<LoadedPreset> loaded = loadPresetFile(path, [&](const std::string& hash) {
+            for (const LibraryIndex* index : { &nam, &ir })
+            {
+                if (const LibraryEntry* entry = index->findByHash(hash); entry && libraryFileExists(entry->path))
+                    return entry->path;
+            }
+            return std::string();
+        }, &error);
+        if (!loaded || !loaded->preset.chain.validate(BlockRegistry::builtin(), &error))
+        {
+            d_stderr2("Xythos: couldn't load the preset for program %d: %s", program, error.c_str());
+            return;
+        }
+
+        ChainState chain = std::move(loaded->preset.chain);
+        retireLoopers(chain); // a preset's Looper block: the global looper keeps its own settings
+        migrateBlocks(chain);
+        for (uint32_t index : presetGlobalParams())
+        {
+            // values a preset doesn't have go back to their defaults
+            const GlobalParamSpec& spec = globalParamSpec(index);
+            const auto it = loaded->preset.globals.find(spec.symbol);
+            setLoadedValue(index, it != loaded->preset.globals.end() ? it->second : spec.def);
+        }
+        for (const BlockState& block : chain.blocks)
+        {
+            setLoadedValue(slotBypassParam(block.slot), block.bypass ? 1.0f : 0.0f);
+            for (int p = 0; p < kParamsPerSlot; ++p)
+                setLoadedValue(slotParam(block.slot, p), block.params[static_cast<size_t>(p)]);
+        }
+        fNotifyPending.store(true, std::memory_order_release);
+        chain.restoreLatches = true;
+        applyChain(chain.toJson().c_str());
+
+        fPresetLoads = (fPresetLoads + 1) % (kMaxExchangeValue / 128);
+        fEngine.setParameter(kParamPresetProgram, static_cast<float>(fPresetLoads * 128 + static_cast<uint32_t>(program)));
+    }
+
     // Picks up chains the UI sent through the exchange file (see state/ChainExchange.hpp), and rebuilds the chain
     // when a block broke
     void watchExchange()
@@ -334,6 +438,9 @@ private:
                 const bool ok = !wav.empty() && writeFileAtomic(looperExportFile(fInstanceId), wav);
                 fEngine.setParameter(kParamLooperExported, static_cast<float>(exportRequest * 2 + (ok ? 1 : 0)));
             }
+            // a footswitch's Program Change for a preset
+            if (const int program = fPendingProgram.exchange(-1, std::memory_order_relaxed); program >= 0)
+                loadProgramPreset(program);
             // at most once a second, in case a block keeps breaking
             const auto now = std::chrono::steady_clock::now();
             if (now - lastRebuild >= std::chrono::seconds(1) && fEngine.takeChainFault())
@@ -375,6 +482,13 @@ private:
     std::atomic<bool> fStopExchange { false }; // stops both threads
     std::thread fExchangeThread;
     std::thread fTunerThread;
+
+    std::atomic<int> fPendingProgram { -1 }; // a Program Change for the exchange thread (a preset's), -1 for none
+    uint32_t fPresetLoads = 0;               // presets loaded for Program Changes (exchange thread)
+    // the parameters a preset loaded for a Program Change set, for run() to tell the host about
+    static constexpr int kMaxNotifyPerRun = 64; // hosts' queues of parameter changes are finite
+    std::array<std::atomic<bool>, kParamCount> fNotifyHost {};
+    std::atomic<bool> fNotifyPending { false };
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XythosPlugin)
 };

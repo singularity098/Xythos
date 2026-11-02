@@ -6,6 +6,7 @@
 #include "TestSupport.hpp"
 #include "engine/BlockRegistry.hpp"
 #include "engine/Engine.hpp"
+#include "engine/looper/Looper.hpp"
 #include "engine/blocks/RhythmBlocks.hpp"
 
 #include <cmath>
@@ -370,6 +371,53 @@ TEST_CASE("MIDI CCs move mapped parameters and are reported for MIDI learn")
     CHECK(rig.engine.midiCc(0, 7, 0).param == -1);
     CHECK(rig.engine.getParameter(slotParam(2, 0)) == doctest::Approx(1.0f));
     CHECK(rig.engine.getParameter(kParamMidiCcCount) == count + 1);
+    CHECK(guard.count() == 0);
+}
+
+TEST_CASE("Program Changes flip learned switches, press footswitch controls, and are reported for MIDI learn")
+{
+    Rig rig;
+    ChainState chain = gainChain(2);
+    chain.midi.push_back({ 0, 1, slotBypassParam(2), true });             // PC 1 -> the block on/off
+    chain.midi.push_back({ 0, 2, looperParam(kLooperParamRecDub), true }); // PC 2 -> the looper's Rec/Dub
+    chain.midi.push_back({ 0, 3, slotParam(2, 0), true });                // PC 3 -> a knob: no use, ignored
+    REQUIRE(rig.engine.setChain(chain));
+    rig.run(2);
+
+    testing::AllocationGuard guard;
+    Engine::ProgramResult result = rig.engine.midiProgram(0, 1);
+    CHECK(result.mapped);
+    CHECK(result.param == static_cast<int>(slotBypassParam(2)));
+    CHECK(result.value == 1.0f);
+    CHECK(rig.engine.getParameter(slotBypassParam(2)) == 1.0f);
+    CHECK(rig.engine.getParameter(kParamMidiProgramValue) == 1.0f);
+    CHECK(rig.engine.getParameter(kParamMidiLastProgram) == 1.0f);
+    result = rig.engine.midiProgram(0, 1); // again: back on
+    CHECK(result.value == 0.0f);
+    CHECK(rig.engine.getParameter(slotBypassParam(2)) == 0.0f);
+
+    // a press is held for one process() call, then let go
+    result = rig.engine.midiProgram(0, 2);
+    CHECK(result.mapped);
+    CHECK(result.param == -1); // nothing for the host: it's 0 again by the next buffer
+    CHECK(rig.engine.getParameter(looperParam(kLooperParamRecDub)) == 1.0f);
+    rig.run(1);
+    CHECK(rig.engine.getParameter(looperParam(kLooperParamRecDub)) == 0.0f);
+
+    // a knob, another channel, an unmapped program: not mapped (a preset's, maybe), but reported
+    CHECK_FALSE(rig.engine.midiProgram(0, 3).mapped);
+    CHECK(rig.engine.getParameter(slotParam(2, 0)) == 0.0f);
+    CHECK_FALSE(rig.engine.midiProgram(1, 1).mapped);
+    CHECK(rig.engine.getParameter(kParamMidiLastProgram) == 1 * 128 + 1);
+    const float count = rig.engine.getParameter(kParamMidiProgramCount);
+
+    // while learning, they only report, and nothing else may take them
+    rig.engine.setParameter(kParamMidiLearn, 1.0f);
+    result = rig.engine.midiProgram(0, 1);
+    CHECK(result.mapped);
+    CHECK(result.param == -1);
+    CHECK(rig.engine.getParameter(slotBypassParam(2)) == 0.0f);
+    CHECK(rig.engine.getParameter(kParamMidiProgramCount) == count + 1);
     CHECK(guard.count() == 0);
 }
 
