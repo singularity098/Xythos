@@ -531,7 +531,7 @@ bool matchesWords(const std::string& text, const std::string& query)
 bool matchesSearch(const LibraryEntry& entry, const std::string& query)
 {
     return matchesWords(entry.name + " " + entry.folder + " " + entry.info + " " +
-                            namGearName(namGear(entry.gearType)) + " " + entry.arch,
+                            namGearName(namGear(entry.gearType, entry.path)) + " " + entry.arch,
                         query);
 }
 
@@ -2834,9 +2834,10 @@ private:
     }
 
     // "Amp Head · A1 Standard": a NAM model's gear type and architecture, either of them if only one is known
-    static std::string namTypeText(const std::string& gearType, const std::string& arch, const char* separator = "  ·  ")
+    static std::string namTypeText(const std::string& gearType, const std::string& path, const std::string& arch,
+                                   const char* separator = "  ·  ")
     {
-        const std::string gear = namGearName(namGear(gearType));
+        const std::string gear = namGearName(namGear(gearType, path));
         return gear.empty() || arch.empty() ? gear + arch : gear + separator + arch;
     }
 
@@ -2851,7 +2852,7 @@ private:
         const BlockState& block = fChain.blocks[index];
         if (fParams[slotBypassParam(block.slot)] >= 0.5f)
             return CabProblem::None;
-        const NamGear gear = namGear(namFileInfo(block).gearType);
+        const NamGear gear = namGear(namFileInfo(block).gearType, block.config.value("path", std::string()));
         if (gear != NamGear::Amp && gear != NamGear::AmpCab)
             return CabProblem::None;
 
@@ -2863,7 +2864,7 @@ private:
                 if (i <= index || fParams[slotBypassParam(other.slot)] >= 0.5f)
                     continue;
                 if (other.typeId == kIrBlockDescriptor.typeId ||
-                    namGear(namFileInfo(other).gearType) == NamGear::Cab)
+                    namGear(namFileInfo(other).gearType, other.config.value("path", std::string())) == NamGear::Cab)
                     return true;
             }
             return false;
@@ -3162,15 +3163,15 @@ private:
                 openCabDialog(row.entry->hash, row.entry->path);
                 return true;
             }
-            if (row.type == &kNamBlockDescriptor && namGear(row.entry->gearType) == NamGear::Pedal)
+            if (row.type == &kNamBlockDescriptor && namGear(row.entry->gearType, row.entry->path) == NamGear::Pedal)
             {
                 openCabDialog(row.entry->hash, row.entry->path, PhotoKind::Pedal);
                 return true;
             }
-            if (row.type == &kNamBlockDescriptor && isAmpGear(namGear(row.entry->gearType)))
+            if (row.type == &kNamBlockDescriptor && isAmpGear(namGear(row.entry->gearType, row.entry->path)))
             {
                 openCabDialog(row.entry->hash, row.entry->path, PhotoKind::Amp,
-                              showsHalfStack(namGear(row.entry->gearType), row.entry->path));
+                              showsHalfStack(namGear(row.entry->gearType, row.entry->path)));
                 return true;
             }
         }
@@ -3763,7 +3764,7 @@ private:
     bool isNamAmp(const BlockState& block) const
     {
         return block.typeId == kNamBlockDescriptor.typeId && !block.config.value("path", std::string()).empty()
-            && isAmpGear(namGear(namFileInfo(block).gearType));
+            && isAmpGear(namGear(namFileInfo(block).gearType, block.config.value("path", std::string())));
     }
 
     // A built-in amp head image (resources/amps/), or its thumbnail; cached with the block types' images
@@ -3804,14 +3805,16 @@ private:
 
     // NAM models of an amp with its cab (gear type Amp + Cab) or a combo amp ("combo" in the file name) show a half
     // stack, so it's plain they include the speakers (owner, 2026-11-01); the other amps a head
-    static bool showsHalfStack(NamGear gear, const std::string& path)
+    // (`gear` from namGear() with the file's path, so a name or folder saying "full rig", "combo", "stack", "4x12",
+    // "SM57"... counts too, for files whose metadata doesn't say; owner, 2026-11-03)
+    static bool showsHalfStack(NamGear gear)
     {
-        return gear == NamGear::AmpCab || (!path.empty() && comboInName(fileStem(path)));
+        return gear == NamGear::AmpCab;
     }
 
     bool showsHalfStack(const BlockState& block) const
     {
-        return showsHalfStack(namGear(namFileInfo(block).gearType), block.config.value("path", std::string()));
+        return showsHalfStack(namGear(namFileInfo(block).gearType, block.config.value("path", std::string())));
     }
 
     static const std::vector<std::string>& photoIds(PhotoKind kind)
@@ -3822,7 +3825,8 @@ private:
     // A NAM block whose file captures a pedal (its metadata's gear type)
     bool isNamPedal(const BlockState& block) const
     {
-        return block.typeId == kNamBlockDescriptor.typeId && namGear(namFileInfo(block).gearType) == NamGear::Pedal;
+        return block.typeId == kNamBlockDescriptor.typeId
+            && namGear(namFileInfo(block).gearType, block.config.value("path", std::string())) == NamGear::Pedal;
     }
 
     // The pedal image a NAM pedal shows: the one the user picked for it (Settings::pedalImages), else one picked by
@@ -8178,7 +8182,7 @@ private:
         if (type == &kNamBlockDescriptor)
         {
             const NamFileInfo& nam = namFileInfo(block);
-            if (const std::string text = namTypeText(nam.gearType, nam.arch, " · "); !text.empty())
+            if (const std::string text = namTypeText(nam.gearType, path, nam.arch, " · "); !text.empty())
                 kind = text;
         }
         fontSize(9.0f);
@@ -8389,7 +8393,7 @@ private:
         if (type == &kNamBlockDescriptor)
         {
             const NamFileInfo& nam = namFileInfo(block);
-            if (const std::string text = namTypeText(nam.gearType, nam.arch); !text.empty())
+            if (const std::string text = namTypeText(nam.gearType, path, nam.arch); !text.empty())
                 detail = text + "  ·  " + detail;
         }
         fontSize(11.0f);
@@ -9087,11 +9091,11 @@ private:
             NanoImage* img = row.entry == nullptr ? typeImage(row.type, true)
                            : row.type == &kIrBlockDescriptor
                                ? cabImage(cabImageFor(row.entry->hash, row.entry->path), true)
-                           : namGear(row.entry->gearType) == NamGear::Pedal
+                           : namGear(row.entry->gearType, row.entry->path) == NamGear::Pedal
                                ? pedalImage(pedalImageFor(row.entry->hash, row.entry->path), true)
-                           : isAmpGear(namGear(row.entry->gearType))
+                           : isAmpGear(namGear(row.entry->gearType, row.entry->path))
                                ? ampImage(ampImageFor(row.entry->hash, row.entry->path,
-                                                     showsHalfStack(namGear(row.entry->gearType), row.entry->path)),
+                                                     showsHalfStack(namGear(row.entry->gearType, row.entry->path))),
                                          true)
                                : nullptr;
             if (img)
@@ -9107,7 +9111,7 @@ private:
                     detail = row.entry->folder;
                 if (!row.entry->info.empty())
                     detail += (detail.empty() ? "" : "  ·  ") + row.entry->info;
-                if (const std::string kind = namTypeText(row.entry->gearType, row.entry->arch); !kind.empty())
+                if (const std::string kind = namTypeText(row.entry->gearType, row.entry->path, row.entry->arch); !kind.empty())
                     detail += (detail.empty() ? "" : "  ·  ") + kind;
             }
             else

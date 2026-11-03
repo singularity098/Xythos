@@ -209,6 +209,150 @@ NamGear namGear(std::string_view gearType)
     return amp && cab ? NamGear::AmpCab : cab ? NamGear::Cab : amp ? NamGear::Amp : NamGear::Unknown;
 }
 
+namespace {
+
+// A path component lowered, its separators ('_', '-', '.', several spaces) made single spaces and apostrophes
+// dropped ("Mic'd" -> "micd"), with a space at each end so words can be matched as " word "
+std::string rigWords(std::string_view part)
+{
+    std::string out = " ";
+    for (const char c : part)
+    {
+        if (c == '\'' || c == '`')
+            continue;
+        const char lc = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+        const bool space = lc == ' ' || lc == '_' || lc == '-' || lc == '.' || lc == '(' || lc == ')' || lc == '['
+                        || lc == ']' || lc == ',';
+        if (space)
+        {
+            if (out.back() != ' ')
+                out += ' ';
+        }
+        else
+            out += lc;
+    }
+    if (out.back() != ' ')
+        out += ' ';
+    return out;
+}
+
+bool isLetter(char c)
+{
+    return c >= 'a' && c <= 'z';
+}
+
+bool isNumber(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+// `word` in `text` with no letter right before it, nor right after it unless `prefix` ("combos" for "combo"); digits
+// count as a boundary, so "sm57" is found in "jcm800 sm57"
+bool hasRigWord(const std::string& text, std::string_view word, bool prefix = false)
+{
+    for (size_t at = text.find(word); at != std::string::npos; at = text.find(word, at + 1))
+    {
+        const size_t end = at + word.size();
+        if ((at == 0 || !isLetter(text[at - 1])) && (prefix || end >= text.size() || !isLetter(text[end])))
+            return true;
+    }
+    return false;
+}
+
+// A cab size: "4x12", "2x10", "1x15", "8x10" (not inside a longer number)
+bool hasCabSize(const std::string& text)
+{
+    for (size_t at = text.find('x'); at != std::string::npos; at = text.find('x', at + 1))
+    {
+        if (at == 0 || !isNumber(text[at - 1]) || (at >= 2 && isNumber(text[at - 2])))
+            continue;
+        size_t end = at + 1;
+        while (end < text.size() && isNumber(text[end]))
+            ++end;
+        const std::string size = text.substr(at + 1, end - at - 1);
+        if ((size == "8" || size == "10" || size == "12" || size == "15") && (end >= text.size() || !isNumber(text[end])))
+            return true;
+    }
+    return false;
+}
+
+RigInName rigInPart(std::string_view part)
+{
+    const std::string text = rigWords(part);
+    const auto any = [&text](std::initializer_list<std::string_view> words, bool prefix = false) {
+        for (const std::string_view word : words)
+            if (hasRigWord(text, word, prefix))
+                return true;
+        return false;
+    };
+    // the amp alone, said outright: wins over a cab named with it ("no cab", "4x12 DI")
+    if (any({ "no cab", "nocab", "no cabinet", "without cab", "wo cab", "no ir", "noir", "amp only", "amponly",
+              "head only", "headonly", "di", "direct", "line out", "lineout", "pre cab", "precab" }))
+        return RigInName::Head;
+    // an amp with its cab
+    if (any({ "full rig", "fullrig", "full rigs", "halfstack", "fullstack", "amp+cab",
+              "amp + cab", "amp cab", "ampcab", "amp and cab", "amp & cab", "amp&cab", "with cab", "w cab", "wcab",
+              "with cabinet", "cab sim", "cabsim", "cabbed", "micd", "miced", "miked", "mic", "mics",
+              "sm57", "sm 57", "md421", "md 421", "r121", "r 121", "e906", "e609", "m160", "u87", "c414", "royer",
+              "sennheiser", "shure" })
+        || any({ "stack", "stacks", "stacked" }) || any({ "combo" }, true) || hasCabSize(text))
+        return RigInName::FullRig;
+    // the amp alone, by the gear's name
+    if (any({ "head", "heads", "preamp", "pre amp", "power amp", "poweramp" }))
+        return RigInName::Head;
+    return RigInName::Unknown;
+}
+
+} // namespace
+
+RigInName rigInName(std::string_view path)
+{
+    // components from the last (the file) to the first; "pack.zip!/inner" splits at the '!' too
+    std::vector<std::string_view> parts;
+    size_t start = 0;
+    for (size_t i = 0; i <= path.size(); ++i)
+    {
+        if (i == path.size() || path[i] == '/' || path[i] == '\\' || path[i] == '!')
+        {
+            if (i > start)
+                parts.push_back(path.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    for (size_t n = parts.size(); n-- > 0;)
+    {
+        std::string_view part = parts[n];
+        if (n + 1 == parts.size())
+        {
+            // the file's name without its extension
+            if (const size_t dot = part.rfind('.'); dot != std::string_view::npos && dot > 0)
+                part = part.substr(0, dot);
+        }
+        else if (part.size() > 4 && (part.substr(part.size() - 4) == ".zip" || part.substr(part.size() - 4) == ".ZIP"))
+            part = part.substr(0, part.size() - 4);
+        if (const RigInName rig = rigInPart(part); rig != RigInName::Unknown)
+            return rig;
+    }
+    return RigInName::Unknown;
+}
+
+NamGear namGear(std::string_view gearType, std::string_view path)
+{
+    const NamGear gear = namGear(gearType);
+    if (gear != NamGear::Unknown && gear != NamGear::Amp)
+        return gear;
+    switch (rigInName(path))
+    {
+    case RigInName::FullRig:
+        return NamGear::AmpCab;
+    case RigInName::Head:
+        return NamGear::Amp;
+    case RigInName::Unknown:
+        break;
+    }
+    return gear;
+}
+
 const char* namGearName(NamGear gear)
 {
     switch (gear)

@@ -103,8 +103,4 @@ std::string defaultAmpImage(std::string_view key, std::string_view fileName, con
 // there are none.
 std::string defaultStackImage(std::string_view key, const std::vector<std::string>& ids);
 
-// Whether a NAM file's name says it's a combo amp ("combo", "Combos"), which shows a half stack: an amp with its
-// speakers, like an Amp + Cab model
-bool comboInName(std::string_view name);
-
 } // namespace xythos

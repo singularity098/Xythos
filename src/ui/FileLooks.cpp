@@ -365,9 +365,4 @@ std::string defaultStackImage(std::string_view key, const std::vector<std::strin
     return sorted[static_cast<size_t>(dice.below(static_cast<int>(sorted.size())))];
 }
 
-bool comboInName(std::string_view name)
-{
-    return hasWord(lowerAscii(name), "combo", true);
-}
-
 } // namespace xythos

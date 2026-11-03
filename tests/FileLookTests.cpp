@@ -294,9 +294,4 @@ TEST_CASE("each NAM amp with its cab gets a half stack from its hash")
     CHECK(uses.size() == stacks.size()); // every one comes up, and only half stacks
     for (const auto& [id, n] : uses)
         CHECK(id.starts_with("stack-"));
-
-    CHECK(comboInName("Fender Deluxe Combo"));
-    CHECK(comboInName("vox_combos_ac15"));
-    CHECK_FALSE(comboInName("Marshall JCM800 head"));
-    CHECK_FALSE(comboInName("Kombo"));
 }

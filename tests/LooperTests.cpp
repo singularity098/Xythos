@@ -515,6 +515,30 @@ TEST_CASE("Play starts the loop where the start marker is, and Clear puts it bac
     CHECK(looper.start() == 0.0f);
 }
 
+TEST_CASE("a click on the timeline while the loop plays plays on from there at once, without a click")
+{
+    Looper looper;
+    countInSetup(looper, 1);
+    press(looper, kLooperParamRecDub);
+    run(looper, 96000 + 16, 0.5f);
+    REQUIRE(looper.report().state == LooperState::Playing);
+    std::vector<float> out, clicks;
+    runKeep(looper, 9600, 0.0f, out, clicks); // a fifth of the way round
+    const float before = looper.report().position;
+    looper.setStart(0.6513f);
+    CHECK(looper.report().state == LooperState::Playing);
+    CHECK(looper.report().position == doctest::Approx(0.6513f).epsilon(0.001));
+    runKeep(looper, 4800, 0.0f, out, clicks);
+    CHECK(looper.report().position == doctest::Approx(0.6513f + 0.05f).epsilon(0.001));
+    CHECK(before < 0.3f);
+    // the 220 Hz sine moves at most ~0.015 a sample: the jump crossfades rather than stepping
+    float step = 0.0f;
+    for (size_t i = 9000; i < 10400; ++i)
+        step = std::max(step, std::fabs(out[i] - out[i - 1]));
+    CHECK(step < 0.03f);
+    CHECK(peakOf(out, 9600, 9900) > 0.2f); // and it's still playing through the fade
+}
+
 TEST_CASE("the engine deletes a pass and sets the start when the page asks, not when a project restores them")
 {
     Engine engine { testing::testRegistry() };

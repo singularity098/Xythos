@@ -386,8 +386,18 @@ public:
     }
 
     // RT. Where Play (and an overdub from Stopped) starts the loop, 0..1 of the way round (owner, 2026-11-01: a click
-    // on the timeline; the start until then, and again once the loop is cleared)
-    void setStart(float fraction) { fStart = std::clamp(fraction, 0.0f, 1.0f); }
+    // on the timeline; the start until then, and again once the loop is cleared). While the loop plays, it plays on
+    // from there at once (owner, 2026-11-03), crossfading from where it was over kFadeSamples
+    void setStart(float fraction)
+    {
+        fStart = std::clamp(fraction, 0.0f, 1.0f);
+        if (fState == LooperState::Playing && fLength > 0)
+        {
+            fJumpFrom = fPosition;
+            fJumpLeft = looper_detail::kFadeSamples;
+            fPosition = startPosition();
+        }
+    }
     float start() const { return fStart; }
 
     // RT. Plays the loop into `io` (1 or 2 channels; what's recorded is what comes in) and adds the count-in's
@@ -637,6 +647,13 @@ private:
         }
         if (dubbing && fWavePass < 0)
             beginPass();
+        // just after a jump (setStart()): where it was fades out
+        if (fJumpLeft > 0 && fJumpFrom >= fLength)
+            fJumpLeft = 0;
+        const auto jumpIndex = static_cast<uint32_t>(fJumpFrom);
+        const double jumpFrac = fJumpFrom - jumpIndex;
+        const uint32_t jumpNext = jumpIndex + 1 < fLength ? jumpIndex + 1 : 0;
+        const float jumpGain = static_cast<float>(fJumpLeft) / static_cast<float>(looper_detail::kFadeSamples);
         const float inPeak = inputPeak(io, numChannels, i); // what's played in, before the loop joins it
         for (uint32_t ch = 0; ch < numChannels; ++ch)
         {
@@ -646,6 +663,16 @@ private:
             {
                 const float* buffer = fLaneData[l][ch];
                 played += static_cast<float>(buffer[index] + (buffer[next] - buffer[index]) * frac);
+            }
+            if (fJumpLeft > 0)
+            {
+                float before = 0.0f;
+                for (int l = 0; l < fWaveLanes; ++l)
+                {
+                    const float* buffer = fLaneData[l][ch];
+                    before += static_cast<float>(buffer[jumpIndex] + (buffer[jumpNext] - buffer[jumpIndex]) * jumpFrac);
+                }
+                played = played * (1.0f - jumpGain) + before * jumpGain;
             }
             if (dubbing)
             {
@@ -677,6 +704,15 @@ private:
                 fPosition -= fLength;
             if (fPosition < 0.0)
                 fPosition += fLength;
+            if (fJumpLeft > 0)
+            {
+                --fJumpLeft;
+                fJumpFrom += step;
+                if (fJumpFrom >= fLength)
+                    fJumpFrom -= fLength;
+                if (fJumpFrom < 0.0)
+                    fJumpFrom += fLength;
+            }
         }
     }
 
@@ -963,6 +999,7 @@ private:
         fState = LooperState::Empty;
         fLength = 0;
         fPosition = 0.0;
+        fJumpLeft = 0;
         fStart = 0.0f;
         fLoopBeat = 0.0;
         fPendingRecDub = false;
@@ -1068,6 +1105,8 @@ private:
     LooperState fState = LooperState::Empty;
     uint32_t fLength = 0;
     double fPosition = 0.0;
+    double fJumpFrom = 0.0;  // where the loop was before a jump (setStart()), fading out
+    uint32_t fJumpLeft = 0;  // samples of that fade to go
     float fStart = 0.0f;                      // the start marker, 0..1
     bool fReverse = false, fHalf = false;
     bool fRecDubHeld = false, fPlayStopHeld = false, fClearHeld = false;

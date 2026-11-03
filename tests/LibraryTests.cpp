@@ -132,6 +132,54 @@ TEST_CASE("NAM gear types map to the categories, from NAM's trainer and TONE3000
     CHECK(std::string(namGearName(NamGear::Unknown)).empty());
 }
 
+TEST_CASE("NAM file paths say whether a model is a full rig or the amp alone")
+{
+    // full rigs, by the file's name
+    CHECK(rigInName("/nam/Marshall JCM800 Full Rig.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/jcm800_fullrig_g7.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Fender Deluxe Combo.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/vox_combos_ac15.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Plexi Half-Stack.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/5150 stack crunch.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Rectifier amp+cab.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Rectifier Amp + Cab.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Rectifier with cab.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Mesa 4x12 V30.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/AC30_2x12.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/JCM800 SM57.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/JCM800 Mic'd.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Marshall head into 4x12.nam") == RigInName::FullRig); // the cab wins over "head"
+    // the amp alone
+    CHECK(rigInName("/nam/Marshall JCM800 head.nam") == RigInName::Head);
+    CHECK(rigInName("/nam/JCM800_DI.nam") == RigInName::Head);
+    CHECK(rigInName("/nam/JCM800 amp only.nam") == RigInName::Head);
+    CHECK(rigInName("/nam/JCM800 no cab.nam") == RigInName::Head);
+    CHECK(rigInName("/nam/Combo amp, no cab.nam") == RigInName::Head); // said outright, it wins
+    CHECK(rigInName("/nam/SLO Preamp.nam") == RigInName::Head);
+    // nothing said
+    CHECK(rigInName("/nam/Marshall JCM800.nam") == RigInName::Unknown);
+    CHECK(rigInName("/nam/Kombo Headroom Stacker2x.nam") == RigInName::Unknown); // not words
+    CHECK(rigInName("/nam/Model 1x120.nam") == RigInName::Unknown);
+    CHECK(rigInName("") == RigInName::Unknown);
+    // the folders, closest first; the file's name wins over them
+    CHECK(rigInName("/home/me/NAM/Full Rigs/Marshall/JCM800.nam") == RigInName::FullRig);
+    CHECK(rigInName("/home/me/NAM/Full Rigs/Heads/JCM800.nam") == RigInName::Head);
+    CHECK(rigInName("/home/me/NAM/Heads/JCM800 4x12.nam") == RigInName::FullRig);
+    CHECK(rigInName("C:\\NAM\\Combos\\Deluxe.nam") == RigInName::FullRig);
+    CHECK(rigInName("/nam/Stacks.zip!/Marshall/JCM800.nam") == RigInName::FullRig);
+
+    // the gear type: names count where the metadata says "amp" or nothing
+    CHECK(namGear("amp", "/nam/JCM800 full rig.nam") == NamGear::AmpCab);
+    CHECK(namGear("", "/nam/Combos/Deluxe.nam") == NamGear::AmpCab);
+    CHECK(namGear("", "/nam/JCM800 head.nam") == NamGear::Amp);
+    CHECK(namGear("", "/nam/JCM800.nam") == NamGear::Unknown);
+    CHECK(namGear("amp", "/nam/JCM800.nam") == NamGear::Amp);
+    CHECK(namGear("amp_cab", "/nam/JCM800 head.nam") == NamGear::AmpCab); // the metadata said so outright
+    CHECK(namGear("pedal", "/nam/Combo Drive.nam") == NamGear::Pedal);
+    CHECK(namGear("cab", "/nam/4x12 SM57.nam") == NamGear::Cab);
+    CHECK(namGear("outboard", "/nam/Combo.nam") == NamGear::Outboard);
+}
+
 TEST_CASE("NAM files describe their architecture")
 {
     auto wavenet = [](int a, int b) {

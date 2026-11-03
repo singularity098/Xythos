@@ -28,6 +28,19 @@ enum class LibraryKind { Nam, Ir };
 enum class NamGear { Unknown, AmpCab, Amp, Cab, Pedal, Outboard, Space, Experimental };
 
 NamGear namGear(std::string_view gearType);
+// What a NAM file's path says about the rig it captures, for files whose metadata doesn't (owner, 2026-11-03: A1
+// files often say only "amp", or nothing): the file name first, then its folders from the closest out. FullRig for an
+// amp with its cab ("full rig", "combo", "stack", "amp+cab", "with cab", a cab size like "4x12", a mic like "SM57" or
+// "mic'd"), Head for the amp alone ("head", "amp only", "no cab", "DI", "direct", "preamp"), else Unknown. When a
+// name says both, "no cab" and the like win over the full rig's words, which win over "head".
+enum class RigInName { Unknown, Head, FullRig };
+RigInName rigInName(std::string_view path);
+
+// What a NAM file captures, from its metadata's gear type and, where that leaves it open, its path: a model that says
+// it's an amp (or says nothing) is an Amp + Cab when its path says it's a full rig, and an Amp Head when its path says
+// it's the amp alone. Other gear types are taken as written.
+NamGear namGear(std::string_view gearType, std::string_view path);
+
 // "Amp + Cab", "Amp Head", "Cabinet", "Pedal", "Outboard", "Spaces", "Experimental"; "" for Unknown
 const char* namGearName(NamGear gear);
 
