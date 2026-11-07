@@ -734,12 +734,28 @@ public:
         fUpdateCacheTime = fileTime(UpdateCache::defaultPath());
 
         const double scaleFactor = getScaleFactor();
-        setGeometryConstraints(XYTHOS_UI_MIN_WIDTH * scaleFactor, XYTHOS_UI_MIN_HEIGHT * scaleFactor, false);
+        // below the layout's smallest size the whole UI shrinks to fit (uiScale()), down to kMinZoom
+        setGeometryConstraints(static_cast<uint>(XYTHOS_UI_MIN_WIDTH * kMinZoom * scaleFactor),
+                               static_cast<uint>(XYTHOS_UI_MIN_HEIGHT * kMinZoom * scaleFactor), false);
         if (d_isNotEqual(scaleFactor, 1.0))
             setSize(DISTRHO_UI_DEFAULT_WIDTH * scaleFactor, DISTRHO_UI_DEFAULT_HEIGHT * scaleFactor);
     }
 
 protected:
+    // How small the UI may get: a fraction of its smallest layout (XYTHOS_UI_MIN_WIDTH x XYTHOS_UI_MIN_HEIGHT)
+    static constexpr double kMinZoom = 0.4;
+
+    // Logical pixels to window pixels: the host's scale factor, times a zoom below 1 while the window is smaller
+    // than the smallest layout, so a small window (a small screen; owner, 2026-11-07) shows the whole UI shrunk
+    // evenly instead of a cramped, clipped layout. fWidth and fHeight never go below the smallest layout.
+    double uiScale() const
+    {
+        const double scaleFactor = getScaleFactor();
+        const double fit = std::min({ 1.0, getWidth() / (XYTHOS_UI_MIN_WIDTH * scaleFactor),
+                                      getHeight() / (XYTHOS_UI_MIN_HEIGHT * scaleFactor) });
+        return scaleFactor * std::max(fit, kMinZoom);
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // DSP -> UI
 
@@ -856,7 +872,7 @@ protected:
         const auto drawStart = std::chrono::steady_clock::now();
         disableVsync(fVsyncDrawable);
         defineArrowCursor(fCursorDrawable);
-        const float scale = static_cast<float>(getScaleFactor());
+        const float scale = static_cast<float>(uiScale());
         fWidth = getWidth() / scale;
         fHeight = getHeight() / scale;
         fHits.clear();
@@ -918,8 +934,8 @@ protected:
 
     bool onMouse(const MouseEvent& ev) override
     {
-        const float x = static_cast<float>(ev.pos.getX() / getScaleFactor());
-        const float y = static_cast<float>(ev.pos.getY() / getScaleFactor());
+        const float x = static_cast<float>(ev.pos.getX() / uiScale());
+        const float y = static_cast<float>(ev.pos.getY() / uiScale());
 
         if (!ev.press)
         {
@@ -1694,8 +1710,8 @@ protected:
 
     bool onMotion(const MotionEvent& ev) override
     {
-        const float x = static_cast<float>(ev.pos.getX() / getScaleFactor());
-        const float y = static_cast<float>(ev.pos.getY() / getScaleFactor());
+        const float x = static_cast<float>(ev.pos.getX() / uiScale());
+        const float y = static_cast<float>(ev.pos.getY() / uiScale());
         fMouseX = x;
         fMouseY = y;
         ++fMotionCount;
@@ -1905,8 +1921,8 @@ protected:
         if (fDialog == Dialog::Menu)
         {
             // the panel under the mouse scrolls: the menu itself or one of its submenus
-            const float mx = static_cast<float>(ev.pos.getX() / getScaleFactor());
-            const float my = static_cast<float>(ev.pos.getY() / getScaleFactor());
+            const float mx = static_cast<float>(ev.pos.getX() / uiScale());
+            const float my = static_cast<float>(ev.pos.getY() / uiScale());
             for (size_t level = fMenuPanels.size(); level-- > 1;)
             {
                 if (fMenuPanels[level].contains(mx, my) && level < fMenuScrolls.size())
@@ -1923,8 +1939,8 @@ protected:
             repaint();
             return true;
         }
-        const float x = static_cast<float>(ev.pos.getX() / getScaleFactor());
-        const float y = static_cast<float>(ev.pos.getY() / getScaleFactor());
+        const float x = static_cast<float>(ev.pos.getX() / uiScale());
+        const float y = static_cast<float>(ev.pos.getY() / uiScale());
         if (const HitArea* hit = hitAt(x, y); hit && hit->kind == Hit::Knob && ev.delta.getY() != 0.0)
         {
             scrollKnob(static_cast<uint32_t>(hit->index), static_cast<float>(ev.delta.getY()), ev.mod & kModifierShift);
@@ -3138,6 +3154,30 @@ private:
         return name + " " + (param < 0 ? "Bypass" : (type && param < type->numParams ? type->params[param].name : "?"));
     }
 
+    // The parameter a treadle block's pedal moves (the one to map an expression pedal to), if the block at this
+    // chain position is one
+    std::optional<uint32_t> treadleParam(int index) const
+    {
+        static constexpr std::pair<const char*, const char*> kTreadles[] = {
+            { "wah", "Position" }, { "whammy", "Position" }, { "volume", "Volume" },
+        };
+        if (index < 0 || index >= static_cast<int>(fChain.blocks.size()))
+            return std::nullopt;
+        const BlockState& block = fChain.blocks[index];
+        const BlockDescriptor* type = BlockRegistry::builtin().find(block.typeId);
+        if (type == nullptr)
+            return std::nullopt;
+        for (const auto& [typeId, name] : kTreadles)
+        {
+            if (block.typeId != typeId)
+                continue;
+            for (int p = 0; p < type->numParams; ++p)
+                if (std::strcmp(type->params[p].name, name) == 0)
+                    return slotParam(block.slot, p);
+        }
+        return std::nullopt;
+    }
+
     static std::string ccText(const MidiMapping& mapping)
     {
         return (mapping.program ? "PC " : "CC ") + std::to_string(mapping.cc) + " (ch "
@@ -3194,6 +3234,20 @@ private:
             return false;
         if (hit->kind == Hit::CabImage)
         {
+            // a treadle's photo is the pedal itself, so it offers MIDI learn for what the pedal moves (owner,
+            // 2026-11-07: an expression pedal had nowhere obvious to go)
+            if (const std::optional<uint32_t> param = treadleParam(hit->index))
+            {
+                fMenuParam = *param;
+                fMenuTile = hit->index;
+                std::vector<MenuEntry> entries { { paramName(*param), MenuAction::None } };
+                entries.push_back({ "MIDI Learn (expression pedal)", MenuAction::MidiLearn });
+                if (const MidiMapping* mapping = fChain.midiMappingFor(*param))
+                    entries.push_back({ "Clear MIDI " + ccText(*mapping), MenuAction::MidiClear });
+                entries.push_back({ "Image…", MenuAction::CabImage });
+                openMenu(x, y, std::move(entries));
+                return true;
+            }
             openImagesDialog(hit->index);
             return true;
         }
@@ -5282,6 +5336,12 @@ private:
                          "Image…) to pick another or one of your own images: a built-in pick follows the IR file into "
                          "every chain and preset, until you pick again or reset it to the default. You can also "
                          "right-click an IR in Add Block." };
+            if (treadleParam(hit.index))
+                return { "Pedal",
+                         "This block's pedal. Right-click it and choose MIDI Learn, then rock your expression pedal "
+                         "(or a MIDI wah or volume pedal): from then on it moves the pedal, as the Position or "
+                         "Volume knob. The same menu clears the mapping, and Image… shows one of your own images "
+                         "instead." };
             return { "Block Image",
                      "This block's image. Right-click it (or use Image…) to show one of your own images instead." };
         case Hit::CabChoose:
