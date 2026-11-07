@@ -28,6 +28,8 @@ struct BlockHelp {
     "The length of the slices the pitch shifter works with. Shorter windows react faster and trail your playing "     \
     "less, but can sound grainy on low notes. Longer windows sound smoother on low notes and chords, but the "        \
     "shifted sound lags a little behind. Start around 40-50 ms."
+#define HQ_WINDOW_HELP                                                                                                \
+    WINDOW_HELP " With Quality set to HQ the Window does nothing: the HQ shifter has no slices."
 #define WIDTH_HELP(what)                                                                                              \
     "How wide the " what " spreads across the stereo field. 0% keeps both sides the same (centred); 100% makes "      \
     "left and right move differently for a wide, swirling sound. Only works when the plugin is in Stereo mode."
@@ -987,7 +989,7 @@ constexpr BlockHelp kBlockHelp[] = {
     { "polyoctave", "Tone",
       "Darkens the octave voices, which smooths the up octaves and makes the sub octaves rounder. All the way "
       "up it's off." },
-    { "polyoctave", "Window", WINDOW_HELP },
+    { "polyoctave", "Window", HQ_WINDOW_HELP },
 
     // Pitch Shifter
     { "pitch", "Shift 1", "How many semitones voice 1 is shifted, up to two octaves up or down. 12 is an octave." },
@@ -1004,7 +1006,7 @@ constexpr BlockHelp kBlockHelp[] = {
       "Shifts voice 1 slightly up and voice 2 slightly down, in cents. With the shifts at 0 and a few cents of "
       "detune, you get a thick, chorus-like doubling." },
     { "pitch", "Dry", "The volume of your original signal. Turn it to 0% to hear only the shifted voices." },
-    { "pitch", "Window", WINDOW_HELP },
+    { "pitch", "Window", HQ_WINDOW_HELP },
     { "pitch", "Tone",
       "Darkens the shifted voices, which smooths out any graininess and helps them sit behind your playing. All "
       "the way up it's off." },
@@ -1017,7 +1019,7 @@ constexpr BlockHelp kBlockHelp[] = {
       "How far the pitch bends at 100% Position, from two octaves up to two octaves down. Dive drops three octaves." },
     { "whammy", "Mode",
       "Whammy plays only the shifted sound, for bends. Harmony adds your dry signal, for a fixed harmony." },
-    { "whammy", "Window", WINDOW_HELP },
+    { "whammy", "Window", HQ_WINDOW_HELP },
 
     // Harmonizer
     { "harmonizer", "Key",
@@ -1037,7 +1039,7 @@ constexpr BlockHelp kBlockHelp[] = {
     { "harmonizer", "Dry",
       "The volume of your original signal. Keep it at 100% to play along with the harmonies; turn it down to "
       "hear only the harmony voices." },
-    { "harmonizer", "Window", WINDOW_HELP },
+    { "harmonizer", "Window", HQ_WINDOW_HELP },
 
     // Synth
     { "synth", "Wave",
@@ -1367,7 +1369,7 @@ constexpr BlockHelp kBlockHelp[] = {
       "Which voices play: Both (one sharp and one flat, the richest), Up (sharp only) or Down (flat only)." },
     { "detune", "Width", WIDTH_HELP("voices") " The sharp voice leans left and the flat one right." },
     { "detune", "Mix", MIX_HELP("detuned voices") },
-    { "detune", "Window", WINDOW_HELP },
+    { "detune", "Window", HQ_WINDOW_HELP },
 
     // Capo
     { "capo", "Shift",
@@ -1378,7 +1380,7 @@ constexpr BlockHelp kBlockHelp[] = {
     { "capo", "Dry",
       "Mixes in your unshifted sound. Keep it at 0% for a capo or a drop tuning; raise it to play along with the "
       "shifted sound as a harmony." },
-    { "capo", "Window", WINDOW_HELP },
+    { "capo", "Window", HQ_WINDOW_HELP },
 
     // Arpeggiator
     { "arpeggiator", "Chord",

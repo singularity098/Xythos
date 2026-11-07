@@ -24,3 +24,6 @@
 [submodule "deps/stb"]
 	path = deps/stb
 	url = https://github.com/nothings/stb
+[submodule "deps/signalsmith-linear"]
+	path = deps/signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear

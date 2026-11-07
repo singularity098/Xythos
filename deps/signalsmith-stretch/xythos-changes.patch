@@ -1,0 +1,66 @@
+--- a/signalsmith-stretch.h
++++ b/signalsmith-stretch.h
+@@ -696,6 +696,8 @@
+ 		// Preliminary output prediction from phase-vocoder
+ 		if (step < size_t(channels)) {
+ 			int c = int(step);
++			const Sample binRotAngle = (bandToFreq(1) - bandToFreq(0))*stft.defaultInterval()*Sample(2*M_PI);
++			const Complex binRotStep = std::polar(Sample(1), binRotAngle);
+ 			Band *bins = bandsForChannel(c);
+ 			auto *predictions = predictionsForChannel(c);
+ 			for (int b = 0; b < bands; ++b) {
+@@ -710,8 +712,14 @@
+ 				prediction.input = getFractional<&Band::input>(c, lowIndex, fracIndex);
+ 
+ 				auto &outputBin = bins[b];
+-				Complex prevInput = getFractional<&Band::prevInput>(c, lowIndex, fracIndex);
+-				Complex freqTwist = _impl::mul<true>(prediction.input, prevInput);
++				// Xythos: each bin's phase advance, interpolated between bins before taking out the fractional
++				// bin's own rotation (prevInput holds each bin rotated by its own centre frequency, and those
++				// differ by a large angle per interval, so interpolating the rotated values gave a wrong advance:
++				// shifted notes up to 20 cents off pitch, depending on where they fell between bins)
++				Complex twistLow = _impl::mul<true>(getBand<&Band::input>(c, lowIndex), getBand<&Band::prevInput>(c, lowIndex));
++				Complex twistHigh = _impl::mul<true>(getBand<&Band::input>(c, lowIndex + 1), getBand<&Band::prevInput>(c, lowIndex + 1));
++				Complex freqTwist = twistLow + (_impl::mul(twistHigh, binRotStep) - twistLow)*fracIndex;
++				freqTwist = _impl::mul(freqTwist, std::polar(Sample(1), -fracIndex*binRotAngle));
+ 				Complex phase = _impl::mul(outputBin.output, freqTwist);
+ 				outputBin.output = phase/(std::max(prevEnergy, prediction.energy) + noiseFloor);
+ 			}
+@@ -785,6 +793,10 @@
+ 					}
+ 				}
+ 
++				// Xythos: the bin's own prediction from its phase advance counts too (four times as much as a
++				// neighbour, scaled like them), so the pitch doesn't drift with the neighbours' vertical
++				// prediction (an octave down came out about 0.4 Hz flat)
++				phase += outputBin.output*(prediction.energy*Sample(4));
+ 				outputBin.output = prediction.makeOutput(phase);
+ 				
+ 				// All other bins are locked in phase
+@@ -870,6 +882,26 @@
+ 					++end;
+ 				}
+ 				Sample avgBand = bandSum/energySum;
++				// Xythos: the peak's frequency from its phase advance over the last interval (the phase vocoder's
++				// estimate), exact for a steady tone. The energy-weighted centre above is biased by where the tone
++				// falls between bins, and the output's pitch is off by (ratio - 1) times that bias: up to 50 cents
++				// an octave down on a guitar's low notes. Falls back to the centre without a usable previous block.
++				{
++					int maxBand = start;
++					for (int b = start; b < end; ++b) {
++						if (energy[b] > energy[maxBand]) maxBand = b;
++					}
++					Complex twist = 0;
++					for (int c = 0; c < channels; ++c) {
++						auto &bin = bandsForChannel(c)[maxBand];
++						twist += _impl::mul<true>(bin.input, bin.prevInput);
++					}
++					if (std::norm(twist) > noiseFloor*noiseFloor) {
++						Sample deviation = std::arg(twist)/(Sample(2*M_PI)*stft.defaultInterval());
++						Sample phaseBand = freqToBand(bandToFreq(Sample(maxBand)) + deviation);
++						if (std::abs(phaseBand - Sample(maxBand)) <= 1) avgBand = phaseBand;
++					}
++				}
+ 				Sample avgFreq = bandToFreq(avgBand);
+ 				peaks.emplace_back(Peak{avgBand, freqToBand(mapFreq(avgFreq))});
+ 

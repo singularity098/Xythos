@@ -111,6 +111,21 @@ target_compile_definitions(miniz PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES _LARGEFIL
 add_library(xxhash INTERFACE)
 target_include_directories(xxhash SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/xxHash)
 
+# Signalsmith Stretch (+ Signalsmith Linear, its FFTs): spectral pitch shifting for the pitch blocks' HQ mode;
+# header-only. Stretch is vendored with our pitch-accuracy changes (deps/signalsmith-stretch/README.md); Linear is a
+# submodule. Their own CMake files fetch from the network, so they're not used. On macOS Linear uses Accelerate's FFT,
+# as its CMake would.
+add_library(signalsmith INTERFACE)
+target_include_directories(signalsmith SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/signalsmith-stretch
+  ${CMAKE_CURRENT_SOURCE_DIR}/deps/signalsmith-linear/include)
+if(APPLE)
+  target_compile_definitions(signalsmith INTERFACE SIGNALSMITH_USE_ACCELERATE ACCELERATE_NEW_LAPACK)
+  target_link_libraries(signalsmith INTERFACE "-framework Accelerate")
+endif()
+if(MSVC)
+  target_compile_options(signalsmith INTERFACE /bigobj)
+endif()
+
 # libwebp: decoding the built-in images (WebP; DPF's stb_image reads only JPEG and PNG). Only the decoder is built, from
 # the lists in its src/*/Makefile.am. Without HAVE_CONFIG_H its SSE2/SSE4.1/AVX2/NEON code is chosen by the compiler's
 # own macros (src/dsp/cpu.h), so every architecture of a macOS universal build gets its own; the other files compile empty.
@@ -209,7 +224,7 @@ target_compile_definitions(xythos-engine PUBLIC XYTHOS_VERSION="${PROJECT_VERSIO
 # Whole archive: NAM Core registers its model architectures from static initializers, which the linker would
 # otherwise drop ("No config parser registered for architecture")
 find_package(Threads REQUIRED)
-target_link_libraries(xythos-engine PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam>" fftconvolver miniz xxhash Threads::Threads)
+target_link_libraries(xythos-engine PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam>" fftconvolver miniz xxhash signalsmith Threads::Threads)
 
 set(XYTHOS_WARNINGS $<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>)
 target_compile_options(xythos-engine PRIVATE ${XYTHOS_WARNINGS})
@@ -354,6 +369,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/TrackingTests.cpp
     tests/TunerTests.cpp
     tests/UndoStackTests.cpp
+    tests/HqPitchTests.cpp
     tests/UpdateCheckTests.cpp
     tests/UserImageTests.cpp
     tests/WebpImageTests.cpp

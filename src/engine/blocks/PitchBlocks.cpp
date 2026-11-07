@@ -13,10 +13,12 @@
 #include "engine/dsp/PitchShifter.hpp"
 #include "engine/dsp/PitchTracker.hpp"
 #include "engine/dsp/Smoother.hpp"
+#include "engine/dsp/SpectralShifter.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <vector>
 
 namespace xythos {
 
@@ -25,10 +27,25 @@ namespace {
 constexpr double kMaxWindowMs = 120.0;
 
 // What the pitch blocks share: a delay line per channel and N voices per channel reading it, a period finder and a
-// pitch tracker on the mono input (so windows can be pitch-synchronous), a tone filter per channel, the window
+// pitch tracker on the mono input (so windows can be pitch-synchronous), a tone filter per channel, the window.
+//
+// HQ mode (block config "hq": true; BlockDescriptor::hq shows the panel's Quality button): each voice is a spectral
+// shifter (dsp/SpectralShifter.hpp) instead, and the dry signal is delayed to match; the block reports that latency.
+// Blocks process in chunks of kChunk samples: beginChunk() runs the HQ voices over the chunk, then per sample dryIn()
+// gives the dry sample (delayed in HQ; in the standard mode it also feeds the delay line) and voice() a voice's
+// output. In HQ a voice's ratio takes effect from the next chunk (0.7 ms later). Voices a block marks inactive
+// (setVoiceActive(): level at zero) are skipped in HQ, which saves their CPU; they start afresh when turned up.
 template <int N>
 class PitchBase : public Block {
 public:
+    static constexpr uint32_t kChunk = 32;
+
+    PitchBase()
+    {
+        std::fill(std::begin(fHqActive), std::end(fHqActive), true);
+        std::fill(std::begin(fHqRatio), std::end(fHqRatio), 1.0);
+    }
+
     void prepare(double sampleRate, uint32_t /*maxFrames*/) override
     {
         fSampleRate = sampleRate;
@@ -37,10 +54,20 @@ public:
         fMaxWindow = static_cast<float>(kMaxWindowMs / 1000.0 * sampleRate);
         fTracker.prepare(sampleRate);
         fFinder.prepare(sampleRate);
+        if (fHq)
+            prepareHq();
         updateWindow();
         updateTone();
         reset();
     }
+
+    bool configure(const nlohmann::json& config) override
+    {
+        configureHq(config);
+        return true;
+    }
+
+    uint32_t latency() const override { return hqLatency(); }
 
     void reset() override
     {
@@ -50,12 +77,93 @@ public:
         {
             fLines[ch].reset();
             fTone[ch].reset();
+            fHqDry[ch].reset();
             for (int v = 0; v < N; ++v)
                 fVoices[ch][v].reset(fWindow, 0.25 * v); // voices start at different points, so they don't jump together
+        }
+        for (int v = 0; v < N; ++v)
+        {
+            fHqVoices[v].reset();
+            fHqIdle[v] = false;
         }
     }
 
 protected:
+    // Non-RT: reads "hq" from a block config (prepare() has already run)
+    void configureHq(const nlohmann::json& config)
+    {
+        fHq = hqFromConfig(config);
+        if (fHq)
+            prepareHq();
+        reset();
+    }
+
+    uint32_t hqLatency() const { return fHq ? fHqVoices[0].latency() : 0; }
+    // where a ratio set now takes effect, in whole chunks behind the input
+    uint32_t hqRatioDelayChunks() const { return fHq ? (fHqVoices[0].inputLatency() + kChunk / 2) / kChunk : 0; }
+    bool hq() const { return fHq; }
+
+    void setVoiceActive(int v, bool active) { fHqActive[v] = active; }
+
+    // RT: call at the start of each chunk, io[..][start, start + n), n <= kChunk
+    void beginChunk(float* const* io, uint32_t numChannels, uint32_t start, uint32_t n)
+    {
+        fChunkStart = start;
+        if (!fHq)
+            return;
+        const uint32_t delay = hqLatency() + 1; // read(1) is the sample just written
+        const float* in[2];
+        for (uint32_t ch = 0; ch < numChannels; ++ch)
+        {
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                fHqIn[ch][i] = io[ch][start + i];
+                fHqDry[ch].write(fHqIn[ch][i]);
+                fHqDryOut[ch][i] = fHqDry[ch].read(delay);
+            }
+            in[ch] = fHqIn[ch];
+        }
+        for (int v = 0; v < N; ++v)
+        {
+            float* out[2] = { fHqWet[v][0], fHqWet[v][1] };
+            if (!fHqActive[v])
+            {
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                    std::fill(out[ch], out[ch] + n, 0.0f);
+                fHqIdle[v] = true;
+                continue;
+            }
+            if (fHqIdle[v])
+            {
+                fHqVoices[v].reset();
+                fHqIdle[v] = false;
+            }
+            fHqVoices[v].setRatio(fHqRatio[v]);
+            fHqVoices[v].process(in, out, numChannels, n);
+        }
+    }
+
+    // RT: the dry sample at buffer position i (delayed by the latency in HQ); call once per channel and sample
+    float dryIn(float* const* io, uint32_t ch, uint32_t i)
+    {
+        if (fHq)
+            return fHqDryOut[ch][i - fChunkStart];
+        const float x = io[ch][i];
+        fLines[ch].write(x);
+        return x;
+    }
+
+    // RT: voice v's output at buffer position i, at `ratio`; after dryIn() for this channel and sample
+    float voice(uint32_t ch, int v, uint32_t i, double ratio, float window)
+    {
+        if (fHq)
+        {
+            fHqRatio[v] = ratio;
+            return fHqWet[v][ch][i - fChunkStart];
+        }
+        return fVoices[ch][v].read(fLines[ch], ratio, window);
+    }
+
     void setWindowMs(float ms)
     {
         fWindowMs = std::min<float>(ms, kMaxWindowMs);
@@ -73,6 +181,8 @@ protected:
     // setting
     float track(float in)
     {
+        if (fHq)
+            return fWindow; // no splices to line up
         fTracker.process(in);
         fFinder.process(in);
         double period = fFinder.period();
@@ -88,6 +198,14 @@ protected:
     PitchVoice fVoices[2][N];
 
 private:
+    void prepareHq()
+    {
+        for (SpectralShifter& shifter : fHqVoices)
+            shifter.prepare(fSampleRate);
+        for (DelayLine& line : fHqDry)
+            line.prepare(fHqVoices[0].latency() + 8);
+    }
+
     void updateWindow() { fWindow = std::min(static_cast<float>(fWindowMs / 1000.0 * fSampleRate), fMaxWindow); }
 
     void updateTone()
@@ -105,6 +223,17 @@ private:
     Biquad fTone[2];
     PitchTracker fTracker;
     PeriodFinder fFinder;
+
+    bool fHq = false;
+    SpectralShifter fHqVoices[N];
+    DelayLine fHqDry[2];
+    float fHqIn[2][kChunk] {};
+    float fHqDryOut[2][kChunk] {};
+    float fHqWet[N][2][kChunk] {};
+    double fHqRatio[N] {};
+    bool fHqActive[N] {};
+    bool fHqIdle[N] {};
+    uint32_t fChunkStart = 0;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -151,22 +280,28 @@ public:
         }
         const double ratios[2] = { semitonesToRatio(fShift[0] + fDetune / 100.0),
                                    semitonesToRatio(fShift[1] - fDetune / 100.0) };
-        for (uint32_t i = 0; i < frames; ++i)
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            const float levels[2] = { fLevel[0].next(), fLevel[1].next() };
-            const float dry = fDry.next();
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+            const uint32_t n = std::min(kChunk, frames - start);
+            for (int v = 0; v < 2; ++v)
+                setVoiceActive(v, fLevel[v].target() > 0.0f || fLevel[v].value() > 1e-4f);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                float wet = 0.0f;
-                for (int v = 0; v < 2; ++v)
+                const float levels[2] = { fLevel[0].next(), fLevel[1].next() };
+                const float dry = fDry.next();
+                const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
                 {
-                    const float y = fVoices[ch][v].read(fLines[ch], ratios[v], window); // keep each voice moving
-                    wet += y * levels[v];
+                    const float x = dryIn(io, ch, i);
+                    float wet = 0.0f;
+                    for (int v = 0; v < 2; ++v)
+                    {
+                        const float y = voice(ch, v, i, ratios[v], window); // keep each voice moving
+                        wet += y * levels[v];
+                    }
+                    io[ch][i] = x * dry + tone(ch, wet);
                 }
-                io[ch][i] = x * dry + tone(ch, wet);
             }
         }
     }
@@ -223,16 +358,20 @@ public:
             fSnap = false;
             fPosition.snap(fPosition.target());
         }
-        for (uint32_t i = 0; i < frames; ++i)
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            const double ratio = semitonesToRatio(fInterval * fPosition.next());
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+            const uint32_t n = std::min(kChunk, frames - start);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                const float wet = fVoices[ch][0].read(fLines[ch], ratio, window);
-                io[ch][i] = fHarmony ? 0.7071f * (x + wet) : wet;
+                const double ratio = semitonesToRatio(fInterval * fPosition.next());
+                const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                {
+                    const float x = dryIn(io, ch, i);
+                    const float wet = voice(ch, 0, i, ratio, window);
+                    io[ch][i] = fHarmony ? 0.7071f * (x + wet) : wet;
+                }
             }
         }
     }
@@ -297,24 +436,30 @@ public:
                 s.snap(s.target());
             fDry.snap(fDry.target());
         }
-        for (uint32_t i = 0; i < frames; ++i)
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            float levels[4];
+            const uint32_t n = std::min(kChunk, frames - start);
             for (int v = 0; v < 4; ++v)
-                levels[v] = fLevel[v].next();
-            const float dry = fDry.next();
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+                setVoiceActive(v, fLevel[v].target() > 0.0f || fLevel[v].value() > 1e-4f);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                float wet = 0.0f;
+                float levels[4];
                 for (int v = 0; v < 4; ++v)
+                    levels[v] = fLevel[v].next();
+                const float dry = fDry.next();
+                const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
                 {
-                    const float y = fVoices[ch][v].read(fLines[ch], kPolyRatios[v], window);
-                    wet += y * levels[v];
+                    const float x = dryIn(io, ch, i);
+                    float wet = 0.0f;
+                    for (int v = 0; v < 4; ++v)
+                    {
+                        const float y = voice(ch, v, i, kPolyRatios[v], window);
+                        wet += y * levels[v];
+                    }
+                    io[ch][i] = x * dry + tone(ch, wet);
                 }
-                io[ch][i] = x * dry + tone(ch, wet);
             }
         }
     }
@@ -365,6 +510,7 @@ public:
             s.prepare(sampleRate, 0.015);
         fInput.prepare(sampleRate);
         PitchBase::prepare(sampleRate, maxFrames);
+        resizeHistory();
         fSnap = true;
     }
 
@@ -388,10 +534,12 @@ public:
     bool configure(const nlohmann::json& config) override
     {
         fInput.configure(config);
+        configureHq(config);
+        resizeHistory();
         return true;
     }
 
-    uint32_t latency() const override { return fInput.latency(); }
+    uint32_t latency() const override { return fInput.latency() + hqLatency(); }
 
     void setRigInput(const float* const* input, uint32_t numChannels) override { fInput.setRig(input, numChannels); }
 
@@ -403,29 +551,44 @@ public:
             for (Smoother* s : { &fLevel[0], &fLevel[1], &fDry })
                 s->snap(s->target());
         }
-        for (uint32_t i = 0; i < frames; ++i)
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            // the played note (io[..][i] is delayed by the lookahead from here on)
-            const NoteTracker::Note& played = fInput.process(io, numChannels, i);
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            if (played.on)
+            const uint32_t n = std::min(kChunk, frames - start);
+            // first the played notes over the chunk (io[..][i] is delayed by the lookahead from here on), so the HQ
+            // voices get the delayed input
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                // the played note, to the nearest semitone; the harmony is relative to it, so bends carry over
-                const int note = static_cast<int>(std::lround(69.0 + 12.0 * std::log2(played.hz / 440.0)));
+                const NoteTracker::Note& played = fInput.process(io, numChannels, i);
+                fWindows[i - start] = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                if (played.on)
+                {
+                    // the played note, to the nearest semitone; the harmony is relative to it, so bends carry over
+                    const int note = static_cast<int>(std::lround(69.0 + 12.0 * std::log2(played.hz / 440.0)));
+                    for (int v = 0; v < 2; ++v)
+                        fShift[v].setTarget(static_cast<float>(harmonySemitones(note, fKey, fScale, fSteps[v])));
+                }
                 for (int v = 0; v < 2; ++v)
-                    fShift[v].setTarget(static_cast<float>(harmonySemitones(note, fKey, fScale, fSteps[v])));
+                    fShifts[v][i - start] = fShift[v].next();
             }
-            const double ratios[2] = { semitonesToRatio(fShift[0].next()), semitonesToRatio(fShift[1].next()) };
-            const float levels[2] = { fLevel[0].next(), fLevel[1].next() };
-            const float dry = fDry.next();
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+            const auto& delayed = advanceHistory(fShifts[0][n - 1], fShifts[1][n - 1]);
+            for (int v = 0; v < 2; ++v)
+                setVoiceActive(v, fLevel[v].target() > 0.0f || fLevel[v].value() > 1e-4f);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                float wet = 0.0f;
+                double ratios[2];
                 for (int v = 0; v < 2; ++v)
-                    wet += fVoices[ch][v].read(fLines[ch], ratios[v], window) * levels[v];
-                io[ch][i] = x * dry + wet;
+                    ratios[v] = semitonesToRatio(hq() ? delayed[v] : fShifts[v][i - start]);
+                const float levels[2] = { fLevel[0].next(), fLevel[1].next() };
+                const float dry = fDry.next();
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                {
+                    const float x = dryIn(io, ch, i);
+                    float wet = 0.0f;
+                    for (int v = 0; v < 2; ++v)
+                        wet += voice(ch, v, i, ratios[v], fWindows[i - start]) * levels[v];
+                    io[ch][i] = x * dry + wet;
+                }
             }
         }
     }
@@ -434,11 +597,32 @@ public:
     {
         PitchBase::reset();
         fInput.reset();
+        std::fill(fShiftHistory.begin(), fShiftHistory.end(), std::array<float, 2> { 0.0f, 0.0f });
+        fHistoryPos = 0;
         fSnap = true;
     }
 
 private:
+    // Non-RT. HQ: the shifts wait until the shifter's processing point reaches the audio they were found in
+    void resizeHistory()
+    {
+        fShiftHistory.assign(hqRatioDelayChunks() + 1, { 0.0f, 0.0f });
+        fHistoryPos = 0;
+    }
+
+    // Pushes this chunk's shifts and returns those from hqRatioDelayChunks() chunks ago
+    const std::array<float, 2>& advanceHistory(float shift0, float shift1)
+    {
+        fShiftHistory[fHistoryPos] = { shift0, shift1 };
+        fHistoryPos = (fHistoryPos + 1) % fShiftHistory.size();
+        return fShiftHistory[fHistoryPos]; // the oldest
+    }
+
     TrackedInput fInput;
+    float fWindows[kChunk] {};
+    float fShifts[2][kChunk] {};
+    std::vector<std::array<float, 2>> fShiftHistory = std::vector<std::array<float, 2>>(1);
+    size_t fHistoryPos = 0;
     int fKey = 0;
     int fScale = 0;
     int fSteps[2] = { 2, 4 };
@@ -485,25 +669,31 @@ public:
         // stereo: the up voice leans left and the down voice right
         const float width = numChannels > 1 ? fWidth : 0.0f;
         const float near = 0.5f + 0.5f * width, far = 0.5f - 0.5f * width;
-        for (uint32_t i = 0; i < frames; ++i)
+        setVoiceActive(0, fVoiceMode != 2);
+        setVoiceActive(1, fVoiceMode != 1);
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            const float mix = fMix.next();
-            const float dryGain = dryGainForMix(mix), wetGain = wetGainForMix(mix);
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+            const uint32_t n = std::min(kChunk, frames - start);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                const float up = fVoices[ch][0].read(fLines[ch], ratios[0], window);
-                const float down = fVoices[ch][1].read(fLines[ch], ratios[1], window);
-                float wet;
-                switch (fVoiceMode)
+                const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                const float mix = fMix.next();
+                const float dryGain = dryGainForMix(mix), wetGain = wetGainForMix(mix);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
                 {
-                case 1:  wet = up; break;
-                case 2:  wet = down; break;
-                default: wet = ch == 0 ? up * near + down * far : down * near + up * far; break;
+                    const float x = dryIn(io, ch, i);
+                    const float up = voice(ch, 0, i, ratios[0], window);
+                    const float down = voice(ch, 1, i, ratios[1], window);
+                    float wet;
+                    switch (fVoiceMode)
+                    {
+                    case 1:  wet = up; break;
+                    case 2:  wet = down; break;
+                    default: wet = ch == 0 ? up * near + down * far : down * near + up * far; break;
+                    }
+                    io[ch][i] = x * dryGain + wet * wetGain;
                 }
-                io[ch][i] = x * dryGain + wet * wetGain;
             }
         }
     }
@@ -554,15 +744,19 @@ public:
             fDry.snap(fDry.target());
         }
         const double ratio = semitonesToRatio(fShift + fFine / 100.0);
-        for (uint32_t i = 0; i < frames; ++i)
+        for (uint32_t start = 0; start < frames; start += kChunk)
         {
-            const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
-            const float dry = fDry.next();
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
+            const uint32_t n = std::min(kChunk, frames - start);
+            beginChunk(io, numChannels, start, n);
+            for (uint32_t i = start; i < start + n; ++i)
             {
-                const float x = io[ch][i];
-                fLines[ch].write(x);
-                io[ch][i] = x * dry + fVoices[ch][0].read(fLines[ch], ratio, window);
+                const float window = track(numChannels > 1 ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]);
+                const float dry = fDry.next();
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                {
+                    const float x = dryIn(io, ch, i);
+                    io[ch][i] = x * dry + voice(ch, 0, i, ratio, window);
+                }
             }
         }
     }
@@ -589,6 +783,9 @@ constexpr double kOrganDuckMs = 4.0;
 
 class OrganBlock : public PitchBase<4> {
 public:
+    // no HQ mode: its swell and steps follow the input as it arrives
+    bool configure(const nlohmann::json& /*config*/) override { return true; }
+
     OrganBlock()
     {
         const float defaults[5] = { 0.5f, 0.8f, 0.6f, 0.0f, 0.3f };
@@ -707,6 +904,9 @@ constexpr double kArpGateMs = 3.0; // each step's edges, so they don't click
 
 class ArpeggiatorBlock : public PitchBase<1> {
 public:
+    // no HQ mode: its swell and steps follow the input as it arrives
+    bool configure(const nlohmann::json& /*config*/) override { return true; }
+
     ArpeggiatorBlock() { fMix.snap(1.0f); }
 
     void prepare(double sampleRate, uint32_t maxFrames) override
@@ -1066,6 +1266,15 @@ const BlockDescriptor kPitchShifterBlockDescriptor = {
         ParamSpec { "Tone", "Hz", 1000.0f, 20000.0f, 20000.0f, ParamScale::Log },
     },
     [] { return std::unique_ptr<Block>(new PitchShifterBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kWhammyBlockDescriptor = {
@@ -1081,6 +1290,15 @@ const BlockDescriptor kWhammyBlockDescriptor = {
         ParamSpec { "Window", "ms", 15.0f, 100.0f, 40.0f, ParamScale::Log },
     },
     [] { return std::unique_ptr<Block>(new WhammyBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kPolyOctaveBlockDescriptor = {
@@ -1098,6 +1316,15 @@ const BlockDescriptor kPolyOctaveBlockDescriptor = {
         ParamSpec { "Window", "ms", 15.0f, 100.0f, 50.0f, ParamScale::Log },
     },
     [] { return std::unique_ptr<Block>(new PolyOctaveBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 } // namespace xythos
@@ -1128,6 +1355,8 @@ const BlockDescriptor kHarmonizerBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    true, // hq
 };
 
 } // namespace xythos
@@ -1147,6 +1376,15 @@ const BlockDescriptor kDetuneBlockDescriptor = {
         ParamSpec { "Window", "ms", 15.0f, 100.0f, 30.0f, ParamScale::Log },
     },
     [] { return std::unique_ptr<Block>(new DetuneBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kCapoBlockDescriptor = {
@@ -1161,6 +1399,15 @@ const BlockDescriptor kCapoBlockDescriptor = {
         ParamSpec { "Window", "ms", 15.0f, 100.0f, 50.0f, ParamScale::Log },
     },
     [] { return std::unique_ptr<Block>(new CapoBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kOrganBlockDescriptor = {

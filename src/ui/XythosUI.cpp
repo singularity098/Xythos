@@ -175,6 +175,12 @@ constexpr const char* kA2SizeHelp =
     "the most CPU. Lite is a slimmed-down version of it that sounds nearly the same for a fraction of the CPU; use "
     "it when you run several amps, a split or a slow computer. Click to switch. Other models ignore it. The size "
     "new blocks start with is in Settings.";
+constexpr const char* kQualityHelp =
+    "Standard or HQ pitch shifting. Standard has no delay, but a slight warble, most on low notes and chords. HQ "
+    "shifts in the frequency domain: much cleaner, especially on single notes, fifths and big intervals, but the "
+    "pedal's sound comes about 150 ms late (more than you can play against live; your DAW makes up for it on "
+    "playback and recording) and it uses more CPU. Shimmer and Pitch Delay hide the delay inside their tails and "
+    "repeats, so in them HQ adds none (Pitch Delay's shortest repeats become about 150 ms). Click to switch.";
 constexpr float kTunerInTuneCents = 2.0f;
 
 // How long the audio engine gets to start a changed chain before the UI reports blocks that aren't running
@@ -218,6 +224,7 @@ enum class Hit {
     GitHub,       // open the project's GitHub page
     A2Size,       // index = position in the chain
     Lookahead,    // index = position in the chain: a menu of the lookaheads
+    Quality,      // index = position in the chain: toggles the "hq" config
     Choice,       // index = host parameter; click opens a menu of the choices
     InClip,
     OutClip,
@@ -1547,6 +1554,14 @@ protected:
             beginEdit();
             nlohmann::json& config = fChain.blocks[hit->index].config;
             config["a2Size"] = config.value("a2Size", 1.0) >= 0.5 ? 0.0 : 1.0;
+            sendChain();
+            return true;
+        }
+
+        case Hit::Quality: {
+            beginEdit();
+            nlohmann::json& config = fChain.blocks[hit->index].config;
+            config["hq"] = !hqFromConfig(config);
             sendChain();
             return true;
         }
@@ -5241,6 +5256,8 @@ private:
             return { "Lookahead", kLookaheadHelp };
         case Hit::A2Size:
             return { "A2 Full/Lite", kA2SizeHelp };
+        case Hit::Quality:
+            return { "Quality", kQualityHelp };
         case Hit::CabImage:
             if (hit.index >= 0 && hit.index < static_cast<int>(fChain.blocks.size()) && isNamAmp(fChain.blocks[hit.index]))
                 return { "Amp Image",
@@ -8278,7 +8295,7 @@ private:
             return;
 
         // The controls: one cell each, plus block-specific extras
-        enum class Cell { Param, A2Size, Lookahead, Meter };
+        enum class Cell { Param, A2Size, Lookahead, Quality, Meter };
         struct Control {
             Cell cell;
             int param;
@@ -8309,6 +8326,8 @@ private:
             for (int p = 0; p < type->numParams; ++p)
                 controls.push_back({ Cell::Param, p });
         }
+        if (type->hq)
+            controls.push_back({ Cell::Quality, 0 });
         if (type->lookahead)
             controls.push_back({ Cell::Lookahead, 0 });
         if (type->meterName)
@@ -8454,6 +8473,14 @@ private:
                 const bool lite = block.config.value("a2Size", 1.0) < 0.5;
                 drawButton({ cx - 40.0f, cy - 14.0f, 80.0f, 28.0f }, lite ? "A2: Lite" : "A2: Full", lite,
                            theme::accent, Hit::A2Size, fSelected);
+                continue;
+            }
+            if (control.cell == Cell::Quality)
+            {
+                const bool hq = hqFromConfig(block.config);
+                label(cx, cy - 26.0f, "Quality", theme::textDim, 12.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+                drawButton({ cx - 42.0f, cy - 14.0f, 84.0f, 28.0f }, hq ? "HQ" : "Standard", hq, theme::accent,
+                           Hit::Quality, fSelected);
                 continue;
             }
             if (control.cell == Cell::Lookahead)

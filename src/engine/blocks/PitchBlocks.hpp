@@ -8,7 +8,9 @@
 namespace xythos {
 
 // The pitch blocks share a delay-line pitch shifter (dsp/PitchShifter.hpp): polyphonic, zero reported latency,
-// with a slight warble; a longer Window warbles less on low notes but trails more. No config.
+// with a slight warble; a longer Window warbles less on low notes but trails more. Config: "hq" (Pitch Shifter,
+// Whammy, Poly Octave, Harmonizer, Detune, Capo): spectral shifting instead (dsp/SpectralShifter.hpp), much cleaner,
+// with about 150 ms of reported latency; the Window is then unused.
 
 // Pitch Shifter / harmonizer: two voices at fixed intervals (whole semitones) plus a shared detune, and the dry
 // signal. One voice a few cents off is a detune chorus; +4 and +7 a major-chord harmony.

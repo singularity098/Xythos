@@ -9,6 +9,7 @@
 #include "engine/dsp/OnsetDetector.hpp"
 #include "engine/dsp/PitchShifter.hpp"
 #include "engine/dsp/Smoother.hpp"
+#include "engine/dsp/SpectralShifter.hpp"
 #include "engine/dsp/Waveshapers.hpp"
 
 #include <algorithm>
@@ -39,8 +40,21 @@ public:
         fShimmer.prepare(sampleRate, 0.05);
         fMix.prepare(sampleRate);
         fFeedbackHighPass.setLowPass(sampleRate, 150.0);
+        if (fHq)
+            fHqShifter.prepare(sampleRate);
         applyAll();
         reset();
+    }
+
+    // "hq": the tail is shifted by a spectral shifter (cleaner, no splice warble in the rising tail). Its latency only
+    // delays the shimmer's regeneration a little, so the block reports none.
+    bool configure(const nlohmann::json& config) override
+    {
+        fHq = hqFromConfig(config);
+        if (fHq)
+            fHqShifter.prepare(fSampleRate);
+        reset();
+        return true;
     }
 
     void setParam(int index, float value) override
@@ -68,6 +82,15 @@ public:
         }
         for (uint32_t i = 0; i < frames; ++i)
         {
+            if (fHq && fHqPos == kHqChunk)
+            {
+                // HQ: the last chunk of the tail through the spectral shifter, played back over the next chunk
+                const float* in[1] = { fHqIn };
+                float* out[1] = { fHqOut };
+                fHqShifter.setRatio(fRatio);
+                fHqShifter.process(in, out, 1, kHqChunk);
+                fHqPos = 0;
+            }
             const float inL = io[0][i];
             const float inR = numChannels > 1 ? io[1][i] : inL;
             const float shimmer = fShimmer.next();
@@ -75,8 +98,18 @@ public:
 
             // the tail, pitch shifted and fed back in; soft-limited, and scaled so the loop's gain stays under one
             // however long the decay
-            fShiftLine.write(fFeedbackHighPass.highPass(0.5f * (fLastL + fLastR)));
-            const float shifted = fVoice.read(fShiftLine, fRatio, shimmerWindow());
+            const float tail = fFeedbackHighPass.highPass(0.5f * (fLastL + fLastR));
+            float shifted;
+            if (fHq)
+            {
+                fHqIn[fHqPos] = tail;
+                shifted = fHqOut[fHqPos++];
+            }
+            else
+            {
+                fShiftLine.write(tail);
+                shifted = fVoice.read(fShiftLine, fRatio, shimmerWindow());
+            }
             const float feed = shaper::soft(shifted * shimmer * fFeedScale);
 
             float wetL, wetR;
@@ -108,10 +141,16 @@ public:
         fLowCutFilter[0].reset();
         fLowCutFilter[1].reset();
         fLastL = fLastR = 0.0f;
+        fHqShifter.reset();
+        std::fill(std::begin(fHqIn), std::end(fHqIn), 0.0f);
+        std::fill(std::begin(fHqOut), std::end(fHqOut), 0.0f);
+        fHqPos = 0;
         fSnap = true;
     }
 
 private:
+    static constexpr uint32_t kHqChunk = 32;
+
     float shimmerWindow() const { return static_cast<float>(kShimmerWindowMs / 1000.0 * fSampleRate); }
 
     void applyAll()
@@ -140,6 +179,11 @@ private:
     float fFeedScale = 0.3f;
     float fLastL = 0.0f, fLastR = 0.0f;
     bool fSnap = true;
+    bool fHq = false;
+    SpectralShifter fHqShifter;
+    float fHqIn[kHqChunk] {};
+    float fHqOut[kHqChunk] {};
+    uint32_t fHqPos = 0;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -524,6 +568,15 @@ const BlockDescriptor kShimmerBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 35.0f, ParamScale::Linear },
     },
     [] { return std::unique_ptr<Block>(new ShimmerBlock()); },
+    -1,
+    -1,
+    false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kFreezeBlockDescriptor = {

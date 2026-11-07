@@ -8,6 +8,7 @@
 #include "engine/dsp/DelayLine.hpp"
 #include "engine/dsp/PitchShifter.hpp"
 #include "engine/dsp/Smoother.hpp"
+#include "engine/dsp/SpectralShifter.hpp"
 #include "engine/dsp/Svf.hpp"
 
 #include <algorithm>
@@ -181,9 +182,23 @@ public:
         fTime.prepare(sampleRate, 0.1);
         fFeedback.prepare(sampleRate);
         fMix.prepare(sampleRate);
+        if (fHq)
+            fHqShifter.prepare(sampleRate);
         updateTime();
         updateTone();
         reset();
+    }
+
+    // "hq": the repeats are shifted by a spectral shifter (cleaner, no splice warble). The repeat is read that much
+    // earlier from the delay line, so the echoes still land on time, down to the shifter's latency (about 150 ms;
+    // shorter times play at that). The dry signal isn't delayed, so the block reports no latency.
+    bool configure(const nlohmann::json& config) override
+    {
+        fHq = hqFromConfig(config);
+        if (fHq)
+            fHqShifter.prepare(fSampleRate);
+        reset();
+        return true;
     }
 
     void setParam(int index, float value) override
@@ -230,6 +245,11 @@ public:
         const double ratio = semitonesToRatio(fShift + fFine / 100.0);
         const float window = static_cast<float>(kPitchDelayWindowMs / 1000.0 * fSampleRate);
         const float maxDelay = static_cast<float>(fLines[0].capacity() - 4);
+        if (fHq)
+        {
+            processHq(io, numChannels, frames, ratio, maxDelay);
+            return;
+        }
         for (uint32_t i = 0; i < frames; ++i)
         {
             const float time = std::clamp(fTime.next(), 1.0f, maxDelay);
@@ -261,10 +281,49 @@ public:
             fToneFilter[ch].reset();
             fLowCut[ch].reset();
         }
+        fHqShifter.reset();
         fSnap = true;
     }
 
 private:
+    static constexpr uint32_t kHqChunk = 32;
+
+    void processHq(float* const* io, uint32_t numChannels, uint32_t frames, double ratio, float maxDelay)
+    {
+        const auto latency = static_cast<float>(fHqShifter.latency());
+        fHqShifter.setRatio(ratio);
+        for (uint32_t start = 0; start < frames; start += kHqChunk)
+        {
+            const uint32_t n = std::min(kHqChunk, frames - start);
+            // the chunk's repeats, read `latency` early (all from before the chunk: at least kHqChunk + 1 back)
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                const float time = std::clamp(fTime.next(), 1.0f, maxDelay);
+                const float read = std::max(time - latency, static_cast<float>(kHqChunk + 1)) - static_cast<float>(i);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                    fHqIn[ch][i] = fLines[ch].readFractional(read);
+            }
+            const float* in[2] = { fHqIn[0], fHqIn[1] };
+            float* out[2] = { fHqOut[0], fHqOut[1] };
+            fHqShifter.process(in, out, numChannels, n);
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                const float feedback = fFeedback.next();
+                const float mix = fMix.next();
+                const float dryGain = dryGainForMix(mix), wetGain = wetGainForMix(mix);
+                for (uint32_t ch = 0; ch < numChannels; ++ch)
+                {
+                    const float x = io[ch][start + i];
+                    float wet = fHqOut[ch][i];
+                    if (fToneOn)
+                        wet = fToneFilter[ch].process(wet);
+                    fLines[ch].write(x + limitFeedback(fLowCut[ch].highPass(wet) * feedback));
+                    io[ch][start + i] = x * dryGain + wet * wetGain;
+                }
+            }
+        }
+    }
+
     void updateTime()
     {
         const double ms = std::min(syncedMs(kPitchDelayBlockDescriptor.params[kPitchDelayParamTime], fTimeMs, fSync, fBpm),
@@ -293,6 +352,10 @@ private:
     OnePole fLowCut[2];
     Smoother fTime, fFeedback, fMix;
     bool fSnap = true;
+    bool fHq = false;
+    SpectralShifter fHqShifter;
+    float fHqIn[2][kHqChunk] {};
+    float fHqOut[2][kHqChunk] {};
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -514,6 +577,12 @@ const BlockDescriptor kPitchDelayBlockDescriptor = {
     kPitchDelayParamSync,
     kPitchDelayParamTime,
     false,
+    nullptr,
+    24.0f,
+    MeterStyle::Reduction,
+    false,
+    false,
+    true, // hq
 };
 
 const BlockDescriptor kBeatRepeatBlockDescriptor = {

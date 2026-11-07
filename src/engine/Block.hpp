@@ -173,6 +173,22 @@ struct BlockDescriptor {
     bool lookahead = false;
     // The block makes a stereo sound from a mono one (ping-pong echoes): in Mono mode the chain turns stereo at it
     bool stereo = false;
+    // The block has an HQ mode (spectral pitch shifting, dsp/SpectralShifter.hpp) and takes the "hq" config: the UI
+    // shows a Quality button
+    bool hq = false;
 };
+
+// The "hq" block config (BlockDescriptor::hq): true for the HQ mode; absent, false or not an object: the standard one
+inline bool hqFromConfig(const nlohmann::json& config)
+{
+    if (!config.is_object())
+        return false;
+    const auto it = config.find("hq");
+    if (it == config.end())
+        return false;
+    if (it->is_boolean())
+        return it->get<bool>();
+    return it->is_number() && it->get<double>() >= 0.5;
+}
 
 } // namespace xythos
