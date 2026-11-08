@@ -417,6 +417,33 @@ bool deletePreset(const fs::path& dir, const std::string& path)
     return fs::remove(file, ec) && !ec;
 }
 
+RenameResult renamePreset(const fs::path& dir, const std::string& path, const std::string& newName,
+                          std::string* newPath)
+{
+    const fs::path file = pathFromUtf8(path);
+    std::error_code ec;
+    if (lowered(pathToUtf8(file.extension())) != Preset::kExtension || !isInsideDir(dir, file)
+        || !fs::is_regular_file(file, ec))
+        return RenameResult::Failed;
+    // presetPath() checks the name; the folder is the file's own, which is inside `dir`
+    const std::optional<fs::path> named = presetPath(file.parent_path(), std::string(), newName);
+    if (!named)
+        return RenameResult::InvalidName;
+    const fs::path target = *named;
+    if (target != file)
+    {
+        // a name that differs only in case is the same file on Windows and macOS: that's a rename, not a clash
+        if (fs::exists(target, ec) && !fs::equivalent(target, file, ec))
+            return RenameResult::Exists;
+        fs::rename(file, target, ec);
+        if (ec)
+            return RenameResult::Failed;
+    }
+    if (newPath)
+        *newPath = pathToUtf8(target);
+    return RenameResult::Renamed;
+}
+
 bool isInsideDir(const fs::path& dir, const fs::path& path)
 {
     std::error_code ec;

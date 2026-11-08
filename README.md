@@ -57,7 +57,7 @@ Delay times and modulation rates can sync to your DAW's tempo, and synced LFOs l
 - Undo and redo (200 steps) for every chain edit and block setting.
 - Every block control can be automated in your DAW and mapped to MIDI (right-click → MIDI Learn). Automation and MIDI follow the block when you move it.
 - Hover over any knob, button or pedal for a plain-English explanation of what it does.
-- A resizable, HiDPI-aware, very dark interface, with a highlight colour of your choice.
+- A resizable, HiDPI-aware, very dark interface, with a choice of themes.
 
 ## Requirements
 

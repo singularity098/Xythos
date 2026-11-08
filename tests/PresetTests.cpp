@@ -203,6 +203,48 @@ TEST_CASE("deleting a preset: only preset files inside the preset folder")
     fs::remove_all(root);
 }
 
+TEST_CASE("renaming a preset: in its own folder, with a checked name, never over another preset")
+{
+    const fs::path root = fs::temp_directory_path() / "xythos-test-preset-rename";
+    fs::remove_all(root);
+    const fs::path dir = root / "presets";
+    Preset preset;
+    const std::string twin = pathToUtf8(*presetPath(dir, "Clean", "Twin"));
+    const std::string deluxe = pathToUtf8(*presetPath(dir, "Clean", "Deluxe"));
+    const std::string outside = pathToUtf8(root / "Outside.xythos");
+    REQUIRE(savePresetFile(twin, preset, false));
+    REQUIRE(savePresetFile(deluxe, preset, false));
+    REQUIRE(savePresetFile(outside, preset, false));
+
+    std::string renamed;
+    CHECK(renamePreset(dir, twin, "  Twin Reverb ", &renamed) == RenameResult::Renamed);
+    CHECK(pathFromUtf8(renamed) == dir / "Clean" / "Twin Reverb.xythos");
+    CHECK(fs::exists(pathFromUtf8(renamed)));
+    CHECK_FALSE(fs::exists(pathFromUtf8(twin)));
+    CHECK(readPresetFile(renamed).has_value()); // the same file, contents untouched
+
+    // a name with the extension keeps it once; the same name changes nothing
+    std::string same;
+    CHECK(renamePreset(dir, renamed, "Twin Reverb.xythos", &same) == RenameResult::Renamed);
+    CHECK(same == renamed);
+
+    CHECK(renamePreset(dir, renamed, "Deluxe") == RenameResult::Exists);
+    CHECK(fs::exists(pathFromUtf8(renamed)));
+    CHECK(renamePreset(dir, renamed, "") == RenameResult::InvalidName);
+    CHECK(renamePreset(dir, renamed, "   ") == RenameResult::InvalidName);
+    CHECK(renamePreset(dir, renamed, "../Escape") == RenameResult::InvalidName);
+    CHECK(renamePreset(dir, renamed, "a/b") == RenameResult::InvalidName);
+    CHECK(renamePreset(dir, renamed, "What?") == RenameResult::InvalidName);
+    CHECK(renamePreset(dir, renamed, "..") == RenameResult::InvalidName);
+    CHECK(fs::exists(pathFromUtf8(renamed)));
+
+    // only preset files inside the preset folder
+    CHECK(renamePreset(dir, outside, "Moved") == RenameResult::Failed);
+    CHECK(fs::exists(pathFromUtf8(outside)));
+    CHECK(renamePreset(dir, twin, "Gone") == RenameResult::Failed); // no such file any more
+    fs::remove_all(root);
+}
+
 TEST_CASE("exported presets carry the user's block images, which go into the library when loaded")
 {
     PresetFixture fixture;

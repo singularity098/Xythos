@@ -30,11 +30,7 @@ std::string Settings::toJson() const
         { "a2Lite", a2Lite },
         { "normalize", normalize },
         { "parallel", parallel },
-        { "accent", accent },
-        { "accentColor", accentColor },
-        { "highlightStyle", inkMode },
-        { "highlightColors", inkColors },
-        { "savedColors", savedColors },
+        { "theme", theme },
         { "favorites", favorites },
         { "embedFiles", embedFiles },
         { "defaultPreset", defaultPreset },
@@ -78,11 +74,7 @@ Settings Settings::fromJson(std::string_view text)
         get("a2Lite", settings.a2Lite);
         get("normalize", settings.normalize);
         get("parallel", settings.parallel);
-        get("accent", settings.accent);
-        get("accentColor", settings.accentColor);
-        get("highlightStyle", settings.inkMode);
-        get("highlightColors", settings.inkColors);
-        get("savedColors", settings.savedColors);
+        get("theme", settings.theme);
         get("favorites", settings.favorites);
         get("embedFiles", settings.embedFiles);
         get("defaultPreset", settings.defaultPreset);

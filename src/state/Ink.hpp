@@ -11,8 +11,8 @@
 
 namespace xythos::ink {
 
-// How the highlight colour and the text are painted: one colour (the accent, Settings::accent), or 2-3 colours
-// spread across the window
+// How the highlight is painted: one colour, or 2-3 colours spread across the window (Smooth runs them left to right,
+// Splotch in soft blobs)
 enum class Mode : int { Solid = 0, Smooth = 1, Splotch = 2 };
 
 struct Rgb
@@ -22,15 +22,25 @@ struct Rgb
     bool operator==(const Rgb&) const = default;
 };
 
-// A preset: its name in Settings, and its colours (2 or 3)
-struct Palette
+// A theme (owner, 2026-11-08): a fixed look picked by name in Settings. Iris is Xythos' own and the default; the
+// others came from Kaia (the owner's drum sampler), all but its Default.
+struct Theme
 {
     std::string_view name;
-    std::vector<Rgb> colors;
+    Mode mode = Mode::Splotch;
+    std::vector<Rgb> colors;  // the highlight paint: outlines, fills, knobs, the logo's circle (2 or 3)
+    Rgb accent;               // the highlight where the paint can't go (text)
+    Rgb text, textDim;
+    uint32_t glowA = 0;       // faint glows over the background, top right and bottom left (0xAARRGGBB; 0 for none)
+    uint32_t glowB = 0;
+    bool scanlines = false;   // faint CRT lines over the whole window (Phosphor)
 };
 
-// The palettes Settings offers, in the order they're shown. Each is light enough to read on the dark window.
-const std::vector<Palette>& presets();
+// The themes Settings offers, in the order they're shown; the first is the default. Their names are stored in
+// the settings: never rename one.
+const std::vector<Theme>& themes();
+// The theme called `name`, or the default (Iris) for an unknown name
+const Theme& themeNamed(std::string_view name);
 
 // The smallest relative luminance a colour may have (WCAG-style, 0..1): about 3:1 against the window's darkest
 // background, so every colour reads as light. Colours below it are lifted toward white (lighten()).

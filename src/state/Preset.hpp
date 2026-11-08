@@ -82,6 +82,13 @@ std::optional<std::filesystem::path> presetPath(const std::filesystem::path& dir
 // with nothing deleted, for anything else or when the file can't be removed.
 bool deletePreset(const std::filesystem::path& dir, const std::string& path);
 
+// Renames the preset file `path` (UTF-8), a preset somewhere inside `dir`, to `newName` in the same folder (Manage
+// Presets; owner, 2026-11-08). The name is trimmed and checked like presetPath()'s. On Renamed, *newPath (if given)
+// is the file's new path (UTF-8); the same name is Renamed with nothing changed. Nothing is changed otherwise.
+enum class RenameResult { Renamed, InvalidName, Exists, Failed };
+RenameResult renamePreset(const std::filesystem::path& dir, const std::string& path, const std::string& newName,
+                          std::string* newPath = nullptr);
+
 // Whether `path` is somewhere inside `dir`
 bool isInsideDir(const std::filesystem::path& dir, const std::filesystem::path& path);
 

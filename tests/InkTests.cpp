@@ -10,36 +10,44 @@
 using namespace xythos;
 using namespace xythos::ink;
 
-TEST_CASE("every preset colour is light enough to read on the window")
+TEST_CASE("every theme's paint, accent and text are light enough to read on the window")
 {
-    for (const Palette& palette : presets())
+    for (const Theme& theme : themes())
     {
-        CHECK(palette.colors.size() >= 2);
-        CHECK(palette.colors.size() <= 3);
-        for (const Rgb color : palette.colors)
-            CHECK(isLightEnough(color));
+        CAPTURE(theme.name);
+        CHECK(theme.colors.size() >= 2);
+        CHECK(theme.colors.size() <= 3);
+        // the paint's colours are lifted when drawn; what the text uses must be light as it is
+        for (const Rgb color : theme.colors)
+            CHECK(isLightEnough(lighten(color)));
+        CHECK(isLightEnough(theme.accent));
+        CHECK(isLightEnough(theme.text));
     }
 }
 
-TEST_CASE("the palettes offered, in order: the owner's first, then pale ones")
+TEST_CASE("the themes offered, in order: Iris first, then Kaia's")
 {
-    const auto& palettes = presets();
-    REQUIRE(palettes.size() == 5);
-    CHECK(palettes[0].name == "Iris");
-    CHECK(palettes[1].name == "Sunset");
-    CHECK(palettes[2].name == "Ocean");
-    CHECK(palettes[3].name == "Mint");
-    CHECK(palettes[4].name == "Gold");
-    CHECK(toHex(palettes[0].colors[0]) == "#7278fe");
-    CHECK(toHex(palettes[0].colors[1]) == "#c688d6");
-    CHECK(toHex(palettes[0].colors[2]) == "#a85eea");
-    // the others are pale: light, and well short of full saturation
-    for (size_t p = 1; p < palettes.size(); ++p)
-        for (const Rgb color : palettes[p].colors)
-        {
-            CHECK(toHsv(color).v > 0.9);
-            CHECK(toHsv(color).s < 0.45);
-        }
+    const auto& list = themes();
+    const std::vector<std::string_view> names = { "Iris", "Ember", "Abyss", "Phosphor", "Synthwave", "Gold Leaf",
+                                                  "Aurora", "Blood Moon", "Glacier", "Graphite", "Oxide" };
+    REQUIRE(list.size() == names.size());
+    for (size_t i = 0; i < names.size(); ++i)
+        CHECK(list[i].name == names[i]);
+    // Iris is the look Xythos always had: Splotchy in the owner's colours, white accent
+    const Theme& iris = list[0];
+    CHECK(iris.mode == Mode::Splotch);
+    CHECK(toHex(iris.colors[0]) == "#7278fe");
+    CHECK(toHex(iris.colors[1]) == "#c688d6");
+    CHECK(toHex(iris.colors[2]) == "#a85eea");
+    CHECK(toHex(iris.accent) == "#ffffff");
+    CHECK(toHex(iris.text) == "#e6e6ea");
+    CHECK(toHex(iris.textDim) == "#8a8a94");
+    CHECK(iris.glowA == 0);
+    CHECK(!iris.scanlines);
+    CHECK(themeNamed("Phosphor").scanlines);
+    CHECK(themeNamed("Gold Leaf").name == "Gold Leaf");
+    CHECK(themeNamed("Default").name == "Iris"); // unknown names get the default
+    CHECK(themeNamed("").name == "Iris");
 }
 
 TEST_CASE("dark colours are lifted toward white, light ones are kept")
@@ -116,29 +124,20 @@ TEST_CASE("the splotch texture uses every colour and is the same every time")
     CHECK(hasLast);
 }
 
-TEST_CASE("ink settings round-trip and default to Splotchy in the owner's colours")
+TEST_CASE("the theme setting round-trips and defaults to Iris")
 {
     Settings defaults;
-    CHECK(defaults.inkMode == static_cast<int>(Mode::Splotch));
-    CHECK(defaults.inkColors == std::vector<std::string> { "#7278fe", "#c688d6", "#a85eea" });
-    CHECK(defaults.accentColor.empty());
-    CHECK(defaults.savedColors.empty());
+    CHECK(defaults.theme == "Iris");
 
     Settings settings;
-    settings.inkMode = 1;
-    settings.inkColors = { "#00d2ff", "#3a7bd5" };
-    settings.accentColor = "#b8bcff";
-    settings.savedColors = { "#b8bcff", "#ffd2e0" };
-    const Settings loaded = Settings::fromJson(settings.toJson());
-    CHECK(loaded.inkMode == 1);
-    CHECK(loaded.inkColors == std::vector<std::string> { "#00d2ff", "#3a7bd5" });
-    CHECK(loaded.accentColor == "#b8bcff");
-    CHECK(loaded.savedColors == std::vector<std::string> { "#b8bcff", "#ffd2e0" });
+    settings.theme = "Synthwave";
+    CHECK(Settings::fromJson(settings.toJson()).theme == "Synthwave");
 
-    // the keys of the unreleased first version are ignored, so everyone starts from the new default
-    const Settings old = Settings::fromJson(R"({"inkMode": 0, "inkColors": ["#ff6a3d", "#ff2e88"]})");
-    CHECK(old.inkMode == static_cast<int>(Mode::Splotch));
-    CHECK(old.inkColors == defaults.inkColors);
+    // the accent and highlight keys it replaced are ignored
+    const Settings old = Settings::fromJson(
+        R"({"accent": 2, "accentColor": "#b8bcff", "highlightStyle": 0, "highlightColors": ["#ff6a3d", "#ff2e88"]})");
+    CHECK(old == defaults);
+    CHECK(old.toJson().find("highlight") == std::string::npos);
 }
 
 TEST_CASE("HSV converts both ways")

@@ -19,7 +19,7 @@ TEST_CASE("settings round-trip through JSON and a file")
     settings.a2Lite = true;
     settings.normalize = false;
     settings.parallel = false;
-    settings.accent = 3;
+    settings.theme = "Glacier";
     settings.favorites = { "00112233445566778899aabbccddeeff", "ffeeddccbbaa99887766554433221100" };
     settings.embedFiles = false;
     settings.recentPresets = { "/a.xythos", "/b.xythos" };
@@ -47,10 +47,10 @@ TEST_CASE("settings fall back to defaults for missing or broken values")
     CHECK(Settings::fromJson("[1, 2]") == Settings {});
     CHECK(Settings::load(std::filesystem::temp_directory_path() / "xythos-no-such-settings.json") == Settings {});
 
-    const Settings partial = Settings::fromJson(R"({"namDir": "/nam", "accent": "purple", "a2Lite": true})");
+    const Settings partial = Settings::fromJson(R"({"namDir": "/nam", "theme": 7, "a2Lite": true})");
     CHECK(partial.namDir == "/nam");
     CHECK(partial.a2Lite);
-    CHECK(partial.accent == 7); // wrong type: default (white)
+    CHECK(partial.theme == "Iris"); // wrong type: default
     CHECK(partial.normalize);
 }
 

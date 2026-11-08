@@ -88,29 +88,14 @@ const Color tileHover(0x1d, 0x1d, 0x22);
 const Color inset(0x05, 0x05, 0x06);
 const Color overlay(0, 0, 0, 0.7f);
 const Color border(255, 255, 255, 0.10f);
-const Color text(0xe6, 0xe6, 0xea);
-const Color textDim(0x8a, 0x8a, 0x94);
+Color text(0xe6, 0xe6, 0xea);
+Color textDim(0x8a, 0x8a, 0x94);
 const Color textFaint(0x5c, 0x5c, 0x64); // the category under each tile
 const Color good(0x4c, 0xc9, 0x7a);
 const Color warn(0xf0, 0xc0, 0x40);
 const Color bad(0xe5, 0x48, 0x4d);
-// Highlight colour, chosen in Settings from these
-const Color accents[] = {
-    // pale, which reads better than vivid colours on the black window (owner, 2026-10-30)
-    Color(0xc4, 0xab, 0xff), // lavender (was purple)
-    Color(0xa8, 0xc6, 0xff), // pale blue
-    Color(0x9e, 0xe3, 0xd6), // pale teal
-    Color(0xab, 0xe6, 0xbf), // pale green
-    Color(0xf7, 0xd6, 0x9c), // pale amber
-    Color(0xf5, 0xab, 0xab), // pale red
-    Color(0xf4, 0xb4, 0xdc), // pale pink
-    Color(0xff, 0xff, 0xff), // white (default, Settings::accent)
-};
-constexpr int accentCount = sizeof(accents) / sizeof(accents[0]);
-// The order Settings shows them in, the default (white) first. Settings stores the index into `accents`, so that
-// list keeps its order.
-constexpr int accentOrder[accentCount] = { 7, 1, 0, 2, 3, 4, 5, 6 };
-Color accent = accents[7];
+// The theme's colours (Settings::theme, ink::themes(); set by applySettings()): the plain highlight, and the text
+Color accent(0xff, 0xff, 0xff);
 const Color faceLabel(255, 255, 255, 0.55f); // knob names on pedal images
 const Color led(0xff, 0x2a, 0x1c);            // the drawn pedals' and amps' LEDs, lit
 const Color neonBody(0x0a, 0x0a, 0x0d);
@@ -249,19 +234,7 @@ enum class Hit {
     SettingsA2,     // index = 1 for Lite
     SettingsNormalize,
     SettingsParallel,
-    SettingsAccent, // index = accent
-    InkMode,        // index = ink::Mode: Solid (the accent), Smooth or Splotchy
-    InkPreset,      // index = position in ink::presets()
-    InkCustom,      // opens the colour picker
-    InkCount,       // index = how many colours (2 or 3)
-    InkSlot,        // index = the colour the picker edits
-    AccentCustom,   // opens the colour picker for the accent (Solid)
-    InkWheel,       // the picker's colour wheel: hue and saturation (drag)
-    InkBrightness,  // the picker's brightness slider (drag)
-    InkCopy,        // copies the picker's hex value
-    InkSave,        // saves the picker's colour to the saved colours
-    InkSaved,       // index = a saved colour: use it
-    InkForget,      // index = a saved colour: remove it
+    SettingsTheme,  // index = position in ink::themes()
     SettingsUpdates, // the update check on/off
     UpdateOpen,     // the update banner: open the release page
     UpdateDismiss,  // the update banner's ×: hide it for this version
@@ -277,6 +250,7 @@ enum class Hit {
     PresetRow,      // Presets dialog: index = row in fPresetRows
     PresetDefault,  // index = row in fPresetRows: make it the default (again: no default)
     PresetDelete,   // index = row in fPresetRows: the first click asks, the second deletes
+    PresetRename,   // index = row in fPresetRows: edit its name in place
     PresetProgram,  // index = row in fPresetRows: learn the Program Change that loads it (again: none)
     BlockImage,     // the block panel's Image button: index = position in the chain
     SetDefaults,    // the block panel's Set as Default: index = position in the chain
@@ -335,7 +309,7 @@ enum Field {
     kFieldIrDir,
     kFieldPresetName,   // Save Preset dialog
     kFieldPresetFolder,
-    kFieldInkHex,       // the colour picker's hex value
+    kFieldPresetRename, // Manage Presets: the name of the preset being renamed
     // the looper page's numbers (owner, 2026-11-01: typed as well as stepped)
     kFieldLooperBpm,
     kFieldLooperBeats,
@@ -363,7 +337,7 @@ constexpr int looperFieldParam(int field)
 // heads (NAM amps)
 enum class PhotoKind { Cab, Pedal, Amp };
 
-enum class Dialog { None, AddBlock, Settings, Menu, SavePreset, Presets, Images, CabImages, InkPicker };
+enum class Dialog { None, AddBlock, Settings, Menu, SavePreset, Presets, Images, CabImages };
 
 // What a file picked in the file browser is for
 enum class BrowseTarget { AddBlock, NamDir, IrDir, OpenPreset, ExportPreset, Locate, AddImage, SaveLoop };
@@ -920,9 +894,8 @@ protected:
             drawImagesDialog();
         else if (fDialog == Dialog::CabImages)
             drawCabDialog();
-        else if (fDialog == Dialog::InkPicker)
-            drawInkPicker();
         drawHelp();
+        drawScanlines();
         if (fShowFps)
             drawFps(drawStart);
 
@@ -982,7 +955,8 @@ protected:
 
         // clicking anywhere but the focused field ends editing it
         if (fFocusedField >= 0
-            && !(hit && (hit->kind == Hit::TextField || hit->kind == Hit::FieldClear) && hit->index == fFocusedField))
+            && !(hit && (hit->kind == Hit::TextField || hit->kind == Hit::FieldClear) && hit->index == fFocusedField)
+            && !(hit && hit->kind == Hit::PresetRename && fFocusedField == kFieldPresetRename))
             blurField(true);
 
         // a Delete waiting for its second click is called off by any other click
@@ -1139,74 +1113,11 @@ protected:
             return true;
         }
 
-        case Hit::InkMode:
-            updateSettings([mode = hit->index](Settings& settings) { settings.inkMode = mode; });
-            return true;
-
-        case Hit::InkPreset:
-            updateSettings([index = static_cast<size_t>(hit->index)](Settings& settings) {
-                settings.inkColors = hexList(ink::presets()[index].colors);
-                if (settings.inkMode == 0)
-                    settings.inkMode = 2;
-            });
-            return true;
-
-        case Hit::InkCustom:
-            if (fSettings.inkMode == 0)
-                updateSettings([](Settings& settings) { settings.inkMode = 2; });
-            openPicker(false);
-            return true;
-
-        case Hit::AccentCustom:
-            openPicker(true);
-            return true;
-
-        case Hit::InkCount:
-            updateSettings([count = static_cast<size_t>(hit->index)](Settings& settings) {
-                settings.inkColors.resize(count, "#ffffff");
-            });
-            fInkSlot = std::min(fInkSlot, hit->index - 1);
-            pickSlot(fInkSlot);
-            return true;
-
-        case Hit::InkSlot:
-            pickSlot(hit->index);
-            return true;
-
-        case Hit::InkWheel:
-        case Hit::InkBrightness:
-            fInkDrag = hit->kind == Hit::InkWheel ? 0 : 1;
-            dragPicker(x, y);
-            return true;
-
-        case Hit::InkCopy:
-            copyText(pickerHex(fInkSlot));
-            showToast("Copied " + pickerHex(fInkSlot));
-            return true;
-
-        case Hit::InkSave:
-            updateSettings([hex = pickerHex(fInkSlot)](Settings& settings) {
-                if (std::find(settings.savedColors.begin(), settings.savedColors.end(), hex) == settings.savedColors.end())
-                    settings.savedColors.push_back(hex);
-            });
-            return true;
-
-        case Hit::InkSaved:
-            if (hit->index < static_cast<int>(fSettings.savedColors.size()))
-            {
-                if (const auto color = ink::parseHex(fSettings.savedColors[hit->index]))
-                {
-                    fPickHsv = ink::toHsv(*color);
-                    setPickerColor(*color, true);
-                }
-            }
-            return true;
-
-        case Hit::InkForget:
-            updateSettings([index = static_cast<size_t>(hit->index)](Settings& settings) {
-                if (index < settings.savedColors.size())
-                    settings.savedColors.erase(settings.savedColors.begin() + static_cast<std::ptrdiff_t>(index));
-            });
+        case Hit::SettingsTheme:
+            if (hit->index >= 0 && hit->index < static_cast<int>(ink::themes().size()))
+                updateSettings([name = std::string(ink::themes()[hit->index].name)](Settings& settings) {
+                    settings.theme = name;
+                });
             return true;
 
         case Hit::DialogBackdrop:
@@ -1414,6 +1325,21 @@ protected:
             }
             return true;
 
+        case Hit::PresetRename:
+            if (hit->index < static_cast<int>(fPresetRows.size()) && !fPresetRows[hit->index].path.empty())
+            {
+                if (fFocusedField == kFieldPresetRename)
+                {
+                    // the button again: done, as Enter
+                    const bool same = fPresetRows[hit->index].path == fPresetRenaming;
+                    blurField(true);
+                    if (same)
+                        return true;
+                }
+                startPresetRename(fPresetRows[hit->index].path, fPresetRows[hit->index].name);
+            }
+            return true;
+
         case Hit::PresetDelete:
             if (hit->index < static_cast<int>(fPresetRows.size()))
             {
@@ -1442,13 +1368,6 @@ protected:
                 fPresetList = listPresets(presetsDir());
                 repaint();
             }
-            return true;
-
-        case Hit::SettingsAccent:
-            updateSettings([accent = hit->index](Settings& settings) {
-                settings.accent = accent;
-                settings.accentColor.clear();
-            });
             return true;
 
         case Hit::BlockImage:
@@ -1742,11 +1661,6 @@ protected:
             return true;
         }
 
-        if (fInkDrag >= 0)
-        {
-            dragPicker(x, y);
-            return true;
-        }
         if (fDragParam >= 0 && fSliderRect.w > 0.0f)
         {
             setNormalized(static_cast<uint32_t>(fDragParam), std::clamp((x - fSliderRect.x) / fSliderRect.w, 0.0f, 1.0f),
@@ -1839,8 +1753,6 @@ protected:
             fFields[fFocusedField] = edit.text;
             if (fFocusedField == kFieldSearch)
                 fListScroll = 0.0f;
-            else if (fFocusedField == kFieldInkHex)
-                hexTyped();
             repaint();
             return true;
         }
@@ -1909,8 +1821,6 @@ protected:
             fFields[fFocusedField] = edit.text;
             if (fFocusedField == kFieldSearch)
                 fListScroll = 0.0f;
-            else if (fFocusedField == kFieldInkHex)
-                hexTyped();
             repaint();
         }
         return true;
@@ -2749,6 +2659,70 @@ private:
         focusField(kFieldPresetName);
     }
 
+    // Manage Presets' Rename (owner, 2026-11-08): the row's name becomes a text field; Enter or a click elsewhere
+    // renames the file, Esc leaves it
+    void startPresetRename(const std::string& path, const std::string& name)
+    {
+        fPresetDeleteArmed.clear();
+        fPresetRenaming = path;
+        fFields[kFieldPresetRename] = name;
+        focusField(kFieldPresetRename);
+        fEdit.selectAll();
+        repaint();
+    }
+
+    void commitPresetRename()
+    {
+        const std::string path = fPresetRenaming;
+        if (path.empty())
+            return;
+        const std::string name = fFields[kFieldPresetRename];
+        std::string renamed;
+        switch (renamePreset(presetsDir(), path, name, &renamed))
+        {
+        case RenameResult::Renamed:
+            break;
+        case RenameResult::InvalidName:
+            showToast(name.find_first_not_of(" \t") == std::string::npos
+                          ? std::string("A preset needs a name: kept ") + fileStem(path)
+                          : std::string("Preset names can't contain < > : \" / \\ | ? * or end with a dot"));
+            return;
+        case RenameResult::Exists:
+            showToast("There's already a preset called " + fileStem(name) + " in that folder");
+            return;
+        case RenameResult::Failed:
+            showToast("Couldn't rename the preset " + fileStem(path));
+            return;
+        }
+        if (renamed == path)
+            return;
+        // everything that names the preset by its path follows it
+        updateSettings([&path, &renamed](Settings& settings) {
+            if (settings.defaultPreset == path)
+                settings.defaultPreset = renamed;
+            if (const int program = settings.programFor(path); program >= 0)
+                settings.assignProgram(renamed, program); // takes it from the old path
+            std::replace(settings.recentPresets.begin(), settings.recentPresets.end(), path, renamed);
+        });
+        if (fLearnPreset == path)
+            fLearnPreset = renamed;
+        for (PresetRow& row : fPresetRows) // this frame's hits still point at them
+        {
+            if (row.path == path)
+            {
+                row.path = renamed;
+                row.name = fileStem(renamed);
+            }
+        }
+        fPresetList = listPresets(presetsDir());
+        if (fChain.preset == path)
+        {
+            fChain.preset = renamed;
+            sendChain();
+        }
+        showToast("Renamed to " + fileStem(renamed));
+    }
+
     void confirmSavePreset()
     {
         const std::optional<std::filesystem::path> path =
@@ -3430,6 +3404,7 @@ private:
         case MenuAction::PresetBrowse:
             fPresetList = listPresets(presetsDir());
             fPresetDeleteArmed.clear();
+            fPresetRenaming.clear();
             openDialog(Dialog::Presets);
             break;
         case MenuAction::PresetOpen:
@@ -3501,11 +3476,10 @@ private:
 
     void applySettings()
     {
-        theme::accent = theme::accents[std::clamp(fSettings.accent, 0, theme::accentCount - 1)];
-        if (const auto custom = ink::parseHex(fSettings.accentColor))
-            theme::accent = toColor(*custom);
-        if (fFocusedField != kFieldInkHex && fDialog == Dialog::InkPicker)
-            fFields[kFieldInkHex] = pickerHex(fInkSlot);
+        const ink::Theme& look = ink::themeNamed(fSettings.theme);
+        theme::accent = toColor(look.accent);
+        theme::text = toColor(look.text);
+        theme::textDim = toColor(look.textDim);
         // the folder fields show the home folder as ~ (and take paths typed that way)
         if (fFocusedField != kFieldNamDir)
             fFields[kFieldNamDir] = shortenHomePath(fSettings.namDir);
@@ -3615,13 +3589,6 @@ private:
             cancelPreview();
         cancelPresetLearn();
         blurField(true);
-        if (fDialog == Dialog::InkPicker)
-        {
-            // back to Settings, where it was opened
-            fDialog = Dialog::Settings;
-            repaint();
-            return;
-        }
         if (fDialog == Dialog::CabImages && fCabReturn != Dialog::None)
         {
             // back to Add Block, as it was
@@ -3680,11 +3647,18 @@ private:
             fFields[field] = fFieldBeforeEdit;
         else
             commitField(static_cast<Field>(field));
+        if (field == kFieldPresetRename)
+            fPresetRenaming.clear(); // done or called off
         repaint();
     }
 
     void commitField(Field field)
     {
+        if (field == kFieldPresetRename)
+        {
+            commitPresetRename();
+            return;
+        }
         if (field == kFieldNamDir || field == kFieldIrDir)
         {
             const bool nam = field == kFieldNamDir;
@@ -3702,13 +3676,6 @@ private:
             if (end != text.c_str() && std::isfinite(value))
                 setValue(looperParam(param), static_cast<float>(std::round(value)));
             fFields[field] = std::to_string(looperInt(param));
-        }
-        else if (field == kFieldInkHex)
-        {
-            // a valid value is saved; anything else goes back to the colour's
-            if (const auto color = ink::parseHex(fFields[field]))
-                setPickerColor(*color, true);
-            fFields[field] = pickerHex(fInkSlot);
         }
     }
 
@@ -3980,6 +3947,39 @@ private:
         beginPath();
         rect(0, 0, fWidth, fHeight);
         fillPaint(imagePattern(x, y, w, h, 0.0f, fBackground, 1.0f));
+        fill();
+        drawThemeGlows();
+    }
+
+    // The theme's faint glows over the background, top right and bottom left (as in Kaia)
+    void drawThemeGlows()
+    {
+        const ink::Theme& look = ink::themeNamed(fSettings.theme);
+        const auto glow = [this](uint32_t argb, float cx, float cy, float radius) {
+            if ((argb >> 24) == 0 || radius <= 0.0f)
+                return;
+            const Color inner(static_cast<int>((argb >> 16) & 0xff), static_cast<int>((argb >> 8) & 0xff),
+                              static_cast<int>(argb & 0xff), static_cast<float>(argb >> 24) / 255.0f);
+            Color outer = inner;
+            outer.alpha = 0.0f;
+            beginPath();
+            rect(0, 0, fWidth, fHeight);
+            fillPaint(radialGradient(cx, cy, 0.0f, radius, inner, outer));
+            fill();
+        };
+        glow(look.glowA, fWidth * 0.85f, 0.0f, fWidth * 0.62f);
+        glow(look.glowB, 0.0f, fHeight, fWidth * 0.5f);
+    }
+
+    // Phosphor's faint CRT scanlines, over everything
+    void drawScanlines()
+    {
+        if (!ink::themeNamed(fSettings.theme).scanlines)
+            return;
+        beginPath();
+        for (float y = 0.0f; y < fHeight; y += 3.0f)
+            rect(0.0f, y, fWidth, 1.0f);
+        NanoVG::fillColor(Color(0, 0, 0, 0.16f));
         fill();
     }
 
@@ -4718,12 +4718,6 @@ private:
             releaseMomentary();
             return true;
         }
-        if (fInkDrag >= 0)
-        {
-            fInkDrag = -1;
-            setPickerColor(ink::fromHsv(fPickHsv), true);
-            return true;
-        }
         if (fDragParam >= 0)
         {
             editParameter(static_cast<uint32_t>(fDragParam), false);
@@ -4875,25 +4869,23 @@ private:
         return imagePattern(x0, y0, x1 - x0, y1 - y0, 0.0f, *fInkImage, alpha);
     }
 
-    // Makes the texture when the mode or the colours change; on the frame, so the GL context is current
+    // Makes the texture when the theme changes; on the frame, so the GL context is current
     void updateInkImage()
     {
-        std::vector<std::string> key = fSettings.inkColors;
-        key.insert(key.begin(), std::to_string(fSettings.inkMode));
-        if (key == fInkKey)
+        const ink::Theme& look = ink::themeNamed(fSettings.theme);
+        if (fInkTheme == look.name)
             return;
-        fInkKey = std::move(key);
+        fInkTheme = look.name;
         fInkImage.reset();
         fInkPixels.clear();
-        if (fSettings.inkMode < 1 || fSettings.inkMode > 2)
+        if (look.mode == ink::Mode::Solid)
             return;
         std::vector<ink::Rgb> colors;
-        for (const std::string& hex : fSettings.inkColors)
-            if (const auto color = ink::parseHex(hex))
-                colors.push_back(ink::lighten(*color));
+        for (const ink::Rgb color : look.colors)
+            colors.push_back(ink::lighten(color));
         if (colors.empty())
             return;
-        fInkPixels = ink::makeTexture(static_cast<ink::Mode>(fSettings.inkMode), colors);
+        fInkPixels = ink::makeTexture(look.mode, colors);
         fInkImage = std::make_unique<NanoImage>(
             createImageFromRGBA(ink::kTextureWidth, ink::kTextureHeight, fInkPixels.data(), 0));
     }
@@ -4907,14 +4899,6 @@ private:
         const int ty = std::clamp(static_cast<int>(y / fHeight * ink::kTextureHeight), 0, ink::kTextureHeight - 1);
         const uint8_t* p = &fInkPixels[(static_cast<size_t>(ty) * ink::kTextureWidth + tx) * 4];
         return Color(p[0], p[1], p[2]);
-    }
-
-    static std::vector<std::string> hexList(const std::vector<ink::Rgb>& colors)
-    {
-        std::vector<std::string> hex;
-        for (const ink::Rgb& color : colors)
-            hex.push_back(ink::toHex(color));
-        return hex;
     }
 
     void fillRect(float x, float y, float w, float h, const Color& color, float radius = 0.0f)
@@ -9935,8 +9919,14 @@ private:
             const bool hover = r.contains(fMouseX, fMouseY) && fMouseY >= listY && fMouseY < listY + listH;
             surface(r.x, r.y, r.w, r.h, 6.0f, Surface::Tile, hover);
             const bool current = row.path == fChain.preset;
-            label(r.x + 14.0f, r.y + r.h / 2, row.name.c_str(), current ? theme::accent : theme::text, 13.0f,
-                  ALIGN_LEFT | ALIGN_MIDDLE);
+            const bool renaming = row.path == fPresetRenaming;
+            constexpr float buttonsW = 376.0f; // the four buttons on the right
+            if (renaming)
+                drawTextField({ r.x + 6.0f, r.y + 4.0f, std::max(80.0f, r.w - buttonsW - 12.0f), r.h - 8.0f },
+                              kFieldPresetRename, "Preset name");
+            else
+                label(r.x + 14.0f, r.y + r.h / 2, row.name.c_str(), current ? theme::accent : theme::text, 13.0f,
+                      ALIGN_LEFT | ALIGN_MIDDLE);
 
             const bool isDefault = row.path == fSettings.defaultPreset;
             const bool armed = row.path == fPresetDeleteArmed;
@@ -9945,7 +9935,10 @@ private:
             const Rect def { r.x + r.w - 92.0f, r.y + 5.0f, 84.0f, r.h - 10.0f };
             const Rect del { def.x - 92.0f, def.y, 84.0f, def.h };
             const Rect pc { del.x - 92.0f, def.y, 84.0f, def.h };
+            const Rect ren { pc.x - 92.0f, def.y, 84.0f, def.h };
             const bool showProgram = program >= 0 || learning || hover;
+            if (renaming || hover)
+                drawButton(ren, "Rename", renaming, theme::accent, Hit::PresetRename, i);
             if (isDefault || hover)
                 drawButton(def, "Default", isDefault, theme::accent, Hit::PresetDefault, i);
             if (armed || hover)
@@ -9964,7 +9957,10 @@ private:
             };
             if (bottom > top)
             {
-                fHits.push_back({ { r.x, top, r.w - 284.0f, bottom - top }, Hit::PresetRow, i });
+                if (!renaming) // the name's field takes clicks instead
+                    fHits.push_back({ { r.x, top, r.w - buttonsW, bottom - top }, Hit::PresetRow, i });
+                if (renaming || hover)
+                    buttonHit(ren, Hit::PresetRename);
                 if (isDefault || hover)
                     buttonHit(def, Hit::PresetDefault);
                 if (armed || hover)
@@ -9979,8 +9975,10 @@ private:
             !fLearnPreset.empty()
                 ? "Press the footswitch that should load " + fileStem(fLearnPreset)
                       + " (it sends a MIDI Program Change). Click the button again to remove it; Esc cancels."
-                : std::string("Click a preset to load it. Default loads when you add Xythos to a track. Program: "
-                              "a footswitch's Program Change loads it. Delete asks again.");
+                : !fPresetRenaming.empty()
+                ? std::string("Type the preset's new name and press Enter (or click elsewhere). Esc keeps the old one.")
+                : std::string("Click a preset to load it. Default: new instances load it. Program: a footswitch "
+                              "loads it. Delete asks again.");
         label(x + 20.0f, y + h - 20.0f, hint.c_str(), theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
     }
 
@@ -10063,67 +10061,30 @@ private:
               ALIGN_LEFT | ALIGN_MIDDLE);
         row += rowH;
 
-        rowLabel("Accent colour");
-        const auto custom = ink::parseHex(fSettings.accentColor);
-        float swatchX = controlX + 14.0f;
-        const auto drawSwatch = [&](const Color& color, bool selected, Hit kind, int index) {
-            const float cy = row + 14.0f;
-            beginPath();
-            circle(swatchX, cy, 11.0f);
-            NanoVG::fillColor(color); // a plain swatch, even for the one that is the highlight
-            fill();
-            if (selected)
-            {
-                beginPath();
-                circle(swatchX, cy, 14.5f);
-                NanoVG::strokeColor(theme::text);
-                strokeWidth(1.5f);
-                stroke();
-            }
-            fHits.push_back({ { swatchX - 15.0f, cy - 15.0f, 30.0f, 30.0f }, kind, index });
-            swatchX += 34.0f;
-        };
-        for (int k = 0; k < theme::accentCount; ++k)
+        // A fixed look per theme (owner, 2026-11-08): six to a row, each with its colours along the bottom edge
+        rowLabel("Theme");
+        const auto& looks = ink::themes();
+        constexpr int perRow = 6;
+        const float chipStep = std::floor(std::min(100.0f, controlW / perRow));
+        for (size_t t = 0; t < looks.size(); ++t)
         {
-            const int i = theme::accentOrder[k];
-            drawSwatch(theme::accents[i], !custom && i == fSettings.accent, Hit::SettingsAccent, i);
-        }
-        if (custom)
-            drawSwatch(toColor(*custom), true, Hit::AccentCustom, 0);
-        drawButton({ swatchX - 8.0f, row, 84.0f, 28.0f }, "Custom…", false, theme::accent, Hit::AccentCustom, 0);
-        row += rowH;
-
-        rowLabel("Text & outlines");
-        static constexpr const char* modes[] = { "Solid", "Smooth", "Splotchy" };
-        for (int m = 0; m < 3; ++m)
-            drawButton({ controlX + m * 80.0f, row, 74.0f, 28.0f }, modes[m], fSettings.inkMode == m, theme::accent,
-                       Hit::InkMode, m);
-        label(controlX + 252.0f, row + 14.0f,
-              fSettings.inkMode == 0 ? "the highlight is the accent colour above"
-                                     : "outlines, fills and the logo use the colours below",
-              theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        row += rowH;
-
-        rowLabel("Colours");
-        const auto& palettes = ink::presets();
-        bool customInk = fSettings.inkMode != 0;
-        constexpr float chipStep = 86.0f;
-        for (size_t p = 0; p < palettes.size(); ++p)
-        {
-            const bool on = fSettings.inkMode != 0 && fSettings.inkColors == hexList(palettes[p].colors);
-            customInk = customInk && !on;
-            const std::string name(palettes[p].name);
-            const Rect chip { controlX + p * chipStep, row, chipStep - 6.0f, 28.0f };
-            drawButton(chip, name.c_str(), on, theme::accent, Hit::InkPreset, static_cast<int>(p));
-            // the set's colours along the bottom edge
-            const auto& colors = palettes[p].colors;
+            const int column = static_cast<int>(t) % perRow;
+            if (t > 0 && column == 0)
+                row += 36.0f;
+            const std::string name(looks[t].name);
+            const Rect chip { controlX + column * chipStep, row, chipStep - 6.0f, 28.0f };
+            drawButton(chip, name.c_str(), name == ink::themeNamed(fSettings.theme).name, theme::accent,
+                       Hit::SettingsTheme, static_cast<int>(t));
+            const auto& colors = looks[t].colors;
             const float segment = (chip.w - 12.0f) / static_cast<float>(colors.size());
             for (size_t c = 0; c < colors.size(); ++c)
-                fillRect(chip.x + 6.0f + segment * static_cast<float>(c), chip.y + chip.h - 5.0f, segment, 2.0f,
-                         toColor(colors[c]));
+            {
+                beginPath();
+                rect(chip.x + 6.0f + segment * static_cast<float>(c), chip.y + chip.h - 5.0f, segment, 2.0f);
+                NanoVG::fillColor(toColor(ink::lighten(colors[c]))); // the plain colour, even the highlight's
+                fill();
+            }
         }
-        drawButton({ controlX + palettes.size() * chipStep, row, 84.0f, 28.0f }, "Custom…", customInk, theme::accent,
-                   Hit::InkCustom, 0);
         row += rowH;
 
         label(x + 24.0f, y + h - 18.0f, shortenHomePath(pathToUtf8(Settings::defaultPath())).c_str(), theme::textDim, 10.0f,
@@ -10131,262 +10092,6 @@ private:
     }
 
     static Color toColor(ink::Rgb color) { return Color(color.r, color.g, color.b); }
-
-    // The colour picker (owner, 2026-10-30): a colour wheel (hue around it, saturation out from the middle) with a
-    // brightness slider, the colour's name and its hex value (selectable, copyable, typed), and the user's saved
-    // colours. It edits the accent (Solid) or one of the gradient's 2-3 colours. Colours too dark to read on the window
-    // are lifted toward white (ink::lighten()).
-    void openPicker(bool solid)
-    {
-        fPickSolid = solid;
-        openDialog(Dialog::InkPicker);
-        pickSlot(0);
-    }
-
-    int pickerCount() const { return fPickSolid ? 1 : static_cast<int>(fSettings.inkColors.size()); }
-
-    std::string pickerHex(int slot) const
-    {
-        if (fPickSolid)
-            return ink::toHex(ink::Rgb { static_cast<uint8_t>(std::lround(theme::accent.red * 255.0f)),
-                                         static_cast<uint8_t>(std::lround(theme::accent.green * 255.0f)),
-                                         static_cast<uint8_t>(std::lround(theme::accent.blue * 255.0f)) });
-        if (slot < 0 || slot >= static_cast<int>(fSettings.inkColors.size()))
-            return "#ffffff";
-        return fSettings.inkColors[slot];
-    }
-
-    // The picker edits another of the colours: the wheel moves to it
-    void pickSlot(int slot)
-    {
-        fInkSlot = std::clamp(slot, 0, std::max(pickerCount() - 1, 0));
-        fPickHsv = ink::toHsv(ink::parseHex(pickerHex(fInkSlot)).value_or(ink::Rgb { 255, 255, 255 }));
-        if (fFocusedField == kFieldInkHex)
-            blurField(false);
-        fFields[kFieldInkHex] = pickerHex(fInkSlot);
-        repaint();
-    }
-
-    // Sets the colour being edited (lifted if too dark); saved to the settings when `save`, else only shown (while
-    // dragging: saved on release)
-    void setPickerColor(ink::Rgb color, bool save)
-    {
-        const std::string hex = ink::toHex(ink::lighten(color));
-        if (fPickSolid)
-        {
-            fSettings.accentColor = hex;
-            if (save)
-                updateSettings([hex](Settings& settings) { settings.accentColor = hex; });
-        }
-        else if (fInkSlot < static_cast<int>(fSettings.inkColors.size()))
-        {
-            fSettings.inkColors[fInkSlot] = hex;
-            if (save)
-                updateSettings([colors = fSettings.inkColors](Settings& settings) { settings.inkColors = colors; });
-        }
-        applySettings();
-        if (fFocusedField != kFieldInkHex)
-            fFields[kFieldInkHex] = hex;
-        repaint();
-    }
-
-    // A drag on the wheel or the brightness slider
-    void dragPicker(float x, float y)
-    {
-        if (fInkDrag == 0 && fPickWheelRadius > 0.0f)
-        {
-            const float dx = x - fPickWheelX, dy = y - fPickWheelY;
-            double hue = std::atan2(dy, dx) * 180.0 / M_PI;
-            if (hue < 0.0)
-                hue += 360.0;
-            fPickHsv.h = hue;
-            fPickHsv.s = std::clamp(std::hypot(dx, dy) / fPickWheelRadius, 0.0f, 1.0f);
-        }
-        else if (fInkDrag == 1 && fPickSlider.h > 0.0f)
-            fPickHsv.v = std::clamp(1.0f - (y - fPickSlider.y) / fPickSlider.h, 0.0f, 1.0f);
-        if (fFocusedField == kFieldInkHex)
-            blurField(false);
-        setPickerColor(ink::fromHsv(fPickHsv), false);
-    }
-
-    // The hex field changed: a complete value moves the wheel to it (saved when the field is left)
-    void hexTyped()
-    {
-        if (const auto color = ink::parseHex(fFields[kFieldInkHex]))
-        {
-            fPickHsv = ink::toHsv(*color);
-            setPickerColor(*color, false);
-        }
-    }
-
-    void drawInkPicker()
-    {
-        fHits.push_back({ { 0, 0, fWidth, fHeight }, Hit::DialogBackdrop, 0 });
-        fillRect(0, 0, fWidth, fHeight, theme::overlay);
-
-        const float w = std::min(560.0f, fWidth - 32.0f);
-        const float h = std::min(500.0f, fHeight - 32.0f);
-        const float x = (fWidth - w) / 2, y = (fHeight - h) / 2;
-        surface(x, y, w, h, 12.0f, Surface::Popup);
-        fHits.push_back({ { x, y, w, h }, Hit::DialogPanel, 0 });
-
-        label(x + 20.0f, y + 26.0f, fPickSolid ? "Accent colour" : "Gradient colours", theme::text, 16.0f,
-              ALIGN_LEFT | ALIGN_MIDDLE);
-        const Rect close { x + w - 40.0f, y + 10.0f, 30.0f, 30.0f };
-        label(close.x + 15.0f, close.y + 15.0f, "×", theme::textDim, 22.0f, ALIGN_CENTER | ALIGN_MIDDLE);
-        fHits.push_back({ close, Hit::DialogClose, 0 });
-
-        // the gradient's colours: how many, and which one the wheel edits
-        float top = y + 56.0f;
-        if (!fPickSolid)
-        {
-            const int count = static_cast<int>(fSettings.inkColors.size());
-            drawButton({ x + 20.0f, top, 96.0f, 28.0f }, "2 colours", count == 2, theme::accent, Hit::InkCount, 2);
-            drawButton({ x + 122.0f, top, 96.0f, 28.0f }, "3 colours", count == 3, theme::accent, Hit::InkCount, 3);
-            fInkSlot = std::clamp(fInkSlot, 0, std::max(count - 1, 0));
-            for (int s = 0; s < count; ++s)
-            {
-                const Rect slot { x + 240.0f + s * 64.0f, top, 56.0f, 28.0f };
-                fillRect(slot.x, slot.y, slot.w, slot.h,
-                         toColor(ink::parseHex(fSettings.inkColors[s]).value_or(ink::Rgb { 255, 255, 255 })), 6.0f);
-                if (s == fInkSlot)
-                {
-                    beginPath();
-                    roundedRect(slot.x - 3.0f, slot.y - 3.0f, slot.w + 6.0f, slot.h + 6.0f, 8.0f);
-                    NanoVG::strokeColor(theme::text);
-                    strokeWidth(1.5f);
-                    stroke();
-                }
-                fHits.push_back({ slot, Hit::InkSlot, s });
-            }
-            top += 44.0f;
-        }
-
-        // the wheel: hue around it, saturation from grey in the middle to full at the rim, at the slider's brightness
-        constexpr float radius = 104.0f;
-        const float cx = x + 20.0f + radius, cy = top + 8.0f + radius;
-        fPickWheelX = cx;
-        fPickWheelY = cy;
-        fPickWheelRadius = radius;
-        const float v = static_cast<float>(fPickHsv.v);
-        constexpr int sectors = 48;
-        constexpr float tau = 2.0f * static_cast<float>(M_PI);
-        for (int i = 0; i < sectors; ++i)
-        {
-            const float a0 = tau * i / sectors, a1 = tau * (i + 1) / sectors;
-            const auto hueColor = [v](float a) {
-                return toColor(ink::fromHsv({ a * 180.0 / M_PI, 1.0, v }));
-            };
-            beginPath();
-            moveTo(cx, cy);
-            arc(cx, cy, radius, a0 - 0.01f, a1 + 0.01f, CW);
-            closePath();
-            fillPaint(linearGradient(cx + std::cos(a0) * radius, cy + std::sin(a0) * radius,
-                                     cx + std::cos(a1) * radius, cy + std::sin(a1) * radius, hueColor(a0),
-                                     hueColor(a1)));
-            fill();
-        }
-        beginPath();
-        circle(cx, cy, radius);
-        fillPaint(radialGradient(cx, cy, 0.0f, radius, Color(v, v, v, 1.0f), Color(v, v, v, 0.0f)));
-        fill();
-        fHits.push_back({ { cx - radius, cy - radius, radius * 2, radius * 2 }, Hit::InkWheel, 0 });
-        {
-            const float a = static_cast<float>(fPickHsv.h * M_PI / 180.0);
-            const float r = static_cast<float>(fPickHsv.s) * radius;
-            const float mx = cx + std::cos(a) * r, my = cy + std::sin(a) * r;
-            beginPath();
-            circle(mx, my, 7.0f);
-            NanoVG::strokeColor(Color(0.0f, 0.0f, 0.0f, 0.7f));
-            strokeWidth(3.0f);
-            stroke();
-            beginPath();
-            circle(mx, my, 7.0f);
-            NanoVG::strokeColor(Color(1.0f, 1.0f, 1.0f));
-            strokeWidth(1.5f);
-            stroke();
-        }
-
-        // brightness: from the wheel's colour at full brightness down to black
-        fPickSlider = { cx + radius + 20.0f, cy - radius, 18.0f, radius * 2 };
-        beginPath();
-        roundedRect(fPickSlider.x, fPickSlider.y, fPickSlider.w, fPickSlider.h, 6.0f);
-        fillPaint(linearGradient(0.0f, fPickSlider.y, 0.0f, fPickSlider.y + fPickSlider.h,
-                                 toColor(ink::fromHsv({ fPickHsv.h, fPickHsv.s, 1.0 })), Color(0, 0, 0)));
-        fill();
-        beginPath();
-        roundedRect(fPickSlider.x + 0.5f, fPickSlider.y + 0.5f, fPickSlider.w - 1.0f, fPickSlider.h - 1.0f, 6.0f);
-        NanoVG::strokeColor(theme::border);
-        strokeWidth(1.0f);
-        stroke();
-        {
-            const float hy = fPickSlider.y + (1.0f - v) * fPickSlider.h;
-            beginPath();
-            roundedRect(fPickSlider.x - 3.0f, hy - 3.0f, fPickSlider.w + 6.0f, 6.0f, 3.0f);
-            NanoVG::fillColor(theme::text);
-            fill();
-        }
-        fHits.push_back({ { fPickSlider.x - 6.0f, fPickSlider.y - 6.0f, fPickSlider.w + 12.0f, fPickSlider.h + 12.0f },
-                          Hit::InkBrightness, 0 });
-
-        // the colour: a swatch, its name, its hex value (select it, copy it, or type one)
-        const ink::Rgb current = ink::parseHex(pickerHex(fInkSlot)).value_or(ink::Rgb { 255, 255, 255 });
-        const float rx = fPickSlider.x + fPickSlider.w + 24.0f, rw = x + w - 20.0f - rx;
-        fillRect(rx, cy - radius, rw, 64.0f, toColor(current), 8.0f);
-        label(rx, cy - radius + 88.0f, ink::colorName(current).c_str(), theme::text, 16.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        drawTextField({ rx, cy - radius + 112.0f, rw - 70.0f, 28.0f }, kFieldInkHex, "#rrggbb");
-        drawButton({ rx + rw - 64.0f, cy - radius + 112.0f, 64.0f, 28.0f }, "Copy", false, theme::accent, Hit::InkCopy,
-                   0);
-        const bool saved = std::find(fSettings.savedColors.begin(), fSettings.savedColors.end(), ink::toHex(current))
-                           != fSettings.savedColors.end();
-        drawButton({ rx, cy - radius + 152.0f, rw, 28.0f }, saved ? "Saved" : "Save colour", saved, theme::accent,
-                   Hit::InkSave, 0);
-
-        // the saved colours: click one to use it, its × forgets it
-        float sy = cy + radius + 28.0f;
-        label(x + 20.0f, sy, fSettings.savedColors.empty() ? "Saved colours: none yet (Save colour keeps one here)"
-                                                           : "Saved colours",
-              theme::textDim, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        sy += 24.0f;
-        constexpr float dot = 24.0f, step = 32.0f;
-        const int perRow = std::max(1, static_cast<int>((w - 40.0f) / step));
-        for (size_t i = 0; i < fSettings.savedColors.size(); ++i)
-        {
-            const float sx = x + 20.0f + (i % perRow) * step + dot / 2;
-            const float syc = sy + (i / perRow) * step + dot / 2;
-            if (syc > y + h - 56.0f)
-                break;
-            const ink::Rgb color = ink::parseHex(fSettings.savedColors[i]).value_or(ink::Rgb { 255, 255, 255 });
-            beginPath();
-            circle(sx, syc, dot / 2);
-            NanoVG::fillColor(toColor(color));
-            fill();
-            if (ink::toHex(color) == ink::toHex(current))
-            {
-                beginPath();
-                circle(sx, syc, dot / 2 + 3.0f);
-                NanoVG::strokeColor(theme::text);
-                strokeWidth(1.5f);
-                stroke();
-            }
-            const Rect r { sx - dot / 2, syc - dot / 2, dot, dot };
-            fHits.push_back({ r, Hit::InkSaved, static_cast<int>(i) });
-            if (r.contains(fMouseX, fMouseY))
-            {
-                const float bx = r.x + r.w - 2.0f, by = r.y + 2.0f;
-                beginPath();
-                circle(bx, by, 6.5f);
-                NanoVG::fillColor(Color(0.0f, 0.0f, 0.0f, 0.9f));
-                fill();
-                label(bx, by, "×", theme::text, 11.0f, ALIGN_CENTER | ALIGN_MIDDLE);
-                fHits.push_back({ { bx - 7.0f, by - 7.0f, 14.0f, 14.0f }, Hit::InkForget, static_cast<int>(i) });
-            }
-        }
-
-        label(x + 20.0f, y + h - 30.0f, "Colours too dark to read on the window are lifted toward white.",
-              theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
-        drawButton({ x + w - 108.0f, y + h - 44.0f, 88.0f, 28.0f }, "Done", false, theme::accent, Hit::DialogClose, 0);
-    }
 
     void drawMergePanel(float top)
     {
@@ -10494,20 +10199,13 @@ private:
     bool fListScrollDragging = false;
     float fListGrabY = 0.0f, fListGrabValue = 0.0f;
 
-    // Ink: the window's paint (its texture is made when the mode or the colours change), the frame's transform, and
-    // the colour picker's state
+    // Ink: the window's paint (its texture is made when the theme changes) and the frame's transform
     std::unique_ptr<NanoImage> fInkImage;
     std::vector<uint8_t> fInkPixels; // its pixels (RGBA), for highlightAt()
-    std::vector<std::string> fInkKey; // the mode and colours fInkImage was made from
+    std::string_view fInkTheme;      // the theme fInkImage was made from (a name in ink::themes())
     float fFrameXform[6] = {};        // the frame's transform (logical to pixels), before anything is drawn
     Color fFillColor;                 // the colour of the last fillColor() call, and whether it was ink
     bool fFillIsInk = false;
-    int fInkSlot = 0;                 // the colour the picker edits
-    int fInkDrag = -1;                // what of the picker is being dragged: 0 the wheel, 1 the brightness slider
-    bool fPickSolid = false;          // the picker edits the accent (Solid), else the gradient's colours
-    ink::Hsv fPickHsv;                // where the wheel and slider are (kept apart from the colour, which is lifted)
-    float fPickWheelX = 0.0f, fPickWheelY = 0.0f, fPickWheelRadius = 0.0f; // the wheel, as drawn
-    Rect fPickSlider;                 // the brightness slider, as drawn
     int fDragParam = -1;
     int fMomentaryParam = -1; // a momentary button being held
     std::chrono::steady_clock::time_point fMomentaryPressedAt;
@@ -10678,6 +10376,7 @@ private:
     float fPresetButtonX = 140.0f;
     std::vector<PresetEntry> fPresetList;     // Presets dialog
     std::string fPresetDeleteArmed;           // the preset whose Delete was clicked once (Presets dialog)
+    std::string fPresetRenaming;              // the preset whose name is being edited (Presets dialog); empty: none
     struct PresetRow {
         std::string folder; // a folder heading when path is empty
         std::string path;
