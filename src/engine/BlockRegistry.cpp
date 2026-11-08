@@ -26,6 +26,7 @@
 #include "engine/blocks/LooperBlock.hpp"
 #include "engine/blocks/MidiOutBlock.hpp"
 #include "engine/blocks/ModSweeperBlock.hpp"
+#include "engine/blocks/MoreSynthBlocks.hpp"
 #include "engine/blocks/NamBlock.hpp"
 #include "engine/blocks/OctaveBlock.hpp"
 #include "engine/blocks/PhaserBlock.hpp"
@@ -166,6 +167,14 @@ const BlockRegistry& BlockRegistry::builtin()
         &kStringSynthBlockDescriptor,
         &kChipSynthBlockDescriptor,
         &kPolyChipBlockDescriptor,
+        &kThereminBlockDescriptor,
+        &kSyncLeadBlockDescriptor,
+        &kPdSynthBlockDescriptor,
+        &kWavetableBlockDescriptor,
+        &kSubBassBlockDescriptor,
+        &kLaserBlockDescriptor,
+        &kDroneBlockDescriptor,
+        &kHarmonicPainterBlockDescriptor,
         &kTrumpetBlockDescriptor,
         &kViolinBlockDescriptor,
         &kPianoBlockDescriptor,

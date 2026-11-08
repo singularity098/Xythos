@@ -176,6 +176,7 @@ add_library(xythos-engine STATIC
   src/engine/blocks/LooperBlock.cpp
   src/engine/blocks/MidiOutBlock.cpp
   src/engine/blocks/ModSweeperBlock.cpp
+  src/engine/blocks/MoreSynthBlocks.cpp
   src/engine/blocks/NamBlock.cpp
   src/engine/blocks/OctaveBlock.cpp
   src/engine/blocks/PhaserBlock.cpp
@@ -352,6 +353,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/MetronomeTests.cpp
     tests/MidiOutTests.cpp
     tests/MorePedalTests.cpp
+    tests/MoreSynthTests.cpp
     tests/NamBlockTests.cpp
     tests/ParamHelpTests.cpp
     tests/PedalFaceTests.cpp

@@ -1646,6 +1646,179 @@ constexpr BlockHelp kBlockHelp[] = {
       "Keeps the click of your pick from turning into short, squeaky high notes. A new note has to last this long "
       "before it sounds. Raise it if you hear chirps at the start of notes; lower it for a faster response. Around "
       "10-20 ms suits most playing; 0 is off." },
+    // Fourth set of synths
+    // Theremin
+    { "theremin", "Glide",
+      "How long the theremin slides to each new note. It never starts a note afresh: it swoops from one pitch to "
+      "the next, so slides, bends and vibrato become theremin sweeps. Long glides sound eerie and vocal; short ones "
+      "follow your playing closely." },
+    { "theremin", "Vibrato",
+      "A vibrato on top of your own, up to half a semitone, like a thereminist's shaking hand. 0% leaves only the "
+      "vibrato you play." },
+    { "theremin", "Rate", "How fast the added vibrato wavers. Around 5-6 Hz is the classic singing vibrato; slower is dreamier." },
+    { "theremin", "Wobble",
+      "The old instrument's instability: the pitch and the level drift slowly and unevenly, for a haunted, vintage "
+      "sound. 0% is perfectly steady." },
+    { "theremin", "Timbre",
+      "From a pure, glassy sine (0%) to a warmer, reedy voice with more harmonics, closer to a cello or a singer." },
+    { "theremin", "Attack", SYNTH_ATTACK_HELP },
+    { "theremin", "Release",
+      "How long the theremin keeps sounding after your note stops. Long releases bridge the gaps between notes, so "
+      "the line keeps singing as you move." },
+    { "theremin", "Octave", SYNTH_OCTAVE_HELP },
+    { "theremin", "Mix", SYNTH_MIX_HELP },
+    { "theremin", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "theremin", "Track", TRACK_HELP },
+
+    // Sync Lead
+    { "synclead", "Sync",
+      "How high the synced saw is pitched against your note. It restarts with every cycle of your note, so you "
+      "still hear your pitch, but higher settings bring out a hard, vocal band of harmonics. Sweep it for the "
+      "classic tearing sync sound." },
+    { "synclead", "Env",
+      "How far each pick sweeps the sync up (up to three octaves) before it falls back over Decay: the scream at "
+      "the start of every note. 0% keeps the tone steady." },
+    { "synclead", "Decay",
+      "How quickly the pick's sweep falls back to the Sync setting. Short decays give a snappy bite; long ones a "
+      "slow, screaming sweep." },
+    { "synclead", "Sub",
+      "A square wave an octave below your note, for weight and punch under the lead. 0% is off." },
+    { "synclead", "Tone", "Brightness of the lead. Turn it down to tame the fizz of high sync settings; up for more bite." },
+    { "synclead", "Attack", SYNTH_ATTACK_HELP },
+    { "synclead", "Release", SYNTH_RELEASE_HELP },
+    { "synclead", "Octave", SYNTH_OCTAVE_HELP },
+    { "synclead", "Glide", SYNTH_GLIDE_HELP },
+    { "synclead", "Mix", SYNTH_MIX_HELP },
+    { "synclead", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "synclead", "Track", TRACK_HELP },
+
+    // Phase Distortion
+    { "pdsynth", "Wave",
+      "The shape the wave bends towards: Saw (bright and buzzy), Square (hollow), Pulse (thin and nasal), or the "
+      "resonant waves, Reso Saw and Reso Tri, which sound like a filter sweeping with a peak, the CZ's famous "
+      "fake resonance." },
+    { "pdsynth", "Amount",
+      "How far the wave is bent, at rest: 0% is a soft, pure tone, higher settings sharpen it into the chosen wave, "
+      "brighter and brighter (the resonant waves sweep their peak up)." },
+    { "pdsynth", "Env",
+      "How much each pick adds to Amount before it falls back to Sustain over Decay, like a filter snapping open "
+      "on every note." },
+    { "pdsynth", "Decay",
+      "How quickly the pick's brightness falls back. Short decays give plucky, electric-piano-like notes; long ones "
+      "a slow sweep." },
+    { "pdsynth", "Sustain",
+      "How much of Env stays while the note rings. 0% falls back to Amount; 100% stays as bright as the pick." },
+    { "pdsynth", "Detune",
+      "A second voice a few cents up, on the other side of the stereo field, for the CZ's thick, chorused two-line "
+      "sound. 0 is a single voice." },
+    { "pdsynth", "Attack", SYNTH_ATTACK_HELP },
+    { "pdsynth", "Release", SYNTH_RELEASE_HELP },
+    { "pdsynth", "Octave", SYNTH_OCTAVE_HELP },
+    { "pdsynth", "Glide", SYNTH_GLIDE_HELP },
+    { "pdsynth", "Mix", SYNTH_MIX_HELP },
+    { "pdsynth", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "pdsynth", "Track", TRACK_HELP },
+
+    // Wavetable
+    { "wavetable", "Table",
+      "The set of waves to morph through. Vocal: vowels, from oo to ee. Metal: clangy, uneven harmonics. PWM: a "
+      "square narrowing to a thin pulse. Digital: a saw, a square, then ever thinner, buzzier combs." },
+    { "wavetable", "Position", "Where in the table the sound sits at rest: each step along it is a different wave, and it morphs between them." },
+    { "wavetable", "Env",
+      "How far your playing moves the position: dig in to change the sound, not just the volume. Negative values "
+      "move it the other way." },
+    { "wavetable", "LFO Rate", "How fast the LFO sweeps the position back and forth: slow for an evolving pad, fast for a warble." },
+    { "wavetable", "LFO Depth", "How far the LFO sweeps the position either side of where it sits. 0% switches the LFO off." },
+    { "wavetable", "Attack", SYNTH_ATTACK_HELP },
+    { "wavetable", "Release", SYNTH_RELEASE_HELP },
+    { "wavetable", "Octave", SYNTH_OCTAVE_HELP },
+    { "wavetable", "Glide", SYNTH_GLIDE_HELP },
+    { "wavetable", "Mix", SYNTH_MIX_HELP },
+    { "wavetable", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "wavetable", "Track", TRACK_HELP },
+
+    // Sub Bass
+    { "subbass", "Wave",
+      "The bass's main wave: Sine (pure and deep), Triangle (round), Square (hollow and punchy) or Saw (buzzy, the "
+      "classic synth bass)." },
+    { "subbass", "Sub", "A sine an octave below the main wave, for weight you feel more than hear. 0% is off." },
+    { "subbass", "Cutoff",
+      "The ladder filter's cutoff: low settings give a dark, round bass; higher ones let the wave's buzz through." },
+    { "subbass", "Resonance",
+      "A peak at the cutoff: a little gives the classic rubbery synth bass; a lot makes it whistle." },
+    { "subbass", "Growl", "Drives the wave into the filter, for a thicker, more aggressive bass that growls as you dig in." },
+    { "subbass", "Env",
+      "How far your playing opens the filter, so harder notes are brighter. 0% keeps the same tone however you "
+      "play." },
+    { "subbass", "Attack", SYNTH_ATTACK_HELP },
+    { "subbass", "Release", SYNTH_RELEASE_HELP },
+    { "subbass", "Octave",
+      "Moves the bass by octaves from the note you play. -1 (the default) puts a guitar's notes in the bass's "
+      "range; -2 goes deeper still." },
+    { "subbass", "Glide", SYNTH_GLIDE_HELP },
+    { "subbass", "Mix", SYNTH_MIX_HELP },
+    { "subbass", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "subbass", "Track", TRACK_HELP },
+
+    // Laser
+    { "laser", "Dive",
+      "How far above your note each zap starts, in semitones, before it dives down to the note. 24 is two octaves; "
+      "0 plays the note with no dive." },
+    { "laser", "Speed",
+      "How long the dive takes. Short times give a quick 'pew'; long ones a slow, falling whistle." },
+    { "laser", "Wave", "The zap's sound: Sine (a clean whistle), Square (a retro game sound) or Saw (harsher)." },
+    { "laser", "Repeat",
+      "Fires the zap again and again while your note rings, this many times a second: a pew-pew-pew. 0 fires once "
+      "per pick." },
+    { "laser", "Echo", "How loud the zaps echo, and how long the echoes go on repeating. 0% switches the echo off." },
+    { "laser", "Time", "The time between echoes: short for a metallic flutter, long for separate pew... pew... repeats." },
+    { "laser", "Release", SYNTH_RELEASE_HELP },
+    { "laser", "Octave", SYNTH_OCTAVE_HELP },
+    { "laser", "Mix", SYNTH_MIX_HELP },
+    { "laser", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "laser", "Track", TRACK_HELP },
+
+    // Drone Keeper
+    { "drone", "Memory",
+      "How many seconds of your playing it listens back over to find the key's root. Short memories follow chord "
+      "changes; long ones hold one root through a whole song." },
+    { "drone", "Register", "How low the drone sits: Low (a deep bass drone), Mid (around the guitar's low strings) or High." },
+    { "drone", "Fifth", "The level of the fifth above the root: an open, tanpura-like drone. 0% is the root alone." },
+    { "drone", "Octave Up", "The level of a voice an octave above the root, for a brighter, fuller drone. 0% leaves it out." },
+    { "drone", "Motion",
+      "How much the drone's tone drifts and breathes over time, so it never sounds static. 0% is perfectly still." },
+    { "drone", "Tone", "Brightness of the drone. Lower is darker and further away; higher is buzzier and more present." },
+    { "drone", "Fade", "How long the drone takes to die away after you stop playing, in seconds (unless Hold is on)." },
+    { "drone", "Hold",
+      "Keeps the drone going after you stop, for good (it still follows the key). Switch it off to let it fade." },
+    { "drone", "Level",
+      "How loud the drone is under your guitar, which always passes untouched. 0% is the guitar alone." },
+    { "drone", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "drone", "Track", TRACK_HELP },
+
+    // Harmonic Painter
+    { "harmonicpainter", "Tilt",
+      "The brightness, as how quickly the harmonics fall away, in dB per octave: -6 is like a saw, lower is softer "
+      "and rounder (a flute at -18), higher is bright and glassy." },
+    { "harmonicpainter", "Odd/Even",
+      "The balance of odd and even harmonics. Towards -100% only odd ones remain: hollow, like a clarinet or a "
+      "square wave. Towards +100% only even ones: an octave-like, organ-pipe sound." },
+    { "harmonicpainter", "Stretch",
+      "Pulls the harmonics sharp, more the higher they are, like a piano's stiff strings; a lot gives a bell-like, "
+      "metallic tone. 0% keeps them in tune." },
+    { "harmonicpainter", "Shimmer",
+      "Each harmonic drifts in level on its own, so the tone moves and sparkles like a living sound. 0% is "
+      "steady." },
+    { "harmonicpainter", "Rate", "How fast the harmonics shimmer: slow for a gently breathing tone, fast for a sparkling, restless one." },
+    { "harmonicpainter", "Spread",
+      "Sends odd harmonics to the left and even ones to the right, for a wide, three-dimensional sound." },
+    { "harmonicpainter", "Attack", SYNTH_ATTACK_HELP },
+    { "harmonicpainter", "Release", SYNTH_RELEASE_HELP },
+    { "harmonicpainter", "Octave", SYNTH_OCTAVE_HELP },
+    { "harmonicpainter", "Glide", SYNTH_GLIDE_HELP },
+    { "harmonicpainter", "Mix", SYNTH_MIX_HELP },
+    { "harmonicpainter", "Pick Filter", SYNTH_PICK_FILTER_HELP },
+    { "harmonicpainter", "Track", TRACK_HELP },
     // Third set
     { "sympathetic", "Key", "The key the strings are tuned to. Set it to your song's key, so the notes you play most set them ringing." },
     { "sympathetic", "Tuning",
@@ -2270,6 +2443,35 @@ constexpr TypeHelp kTypeHelp[] = {
       "A polyphonic 8-bit synth: it hears every note you play, chords included, and plays each one as a pulse or "
       "triangle voice snapped to the semitone, or arpeggiates the chord. Low notes take a moment longer to speak "
       "than in the mono synths. Play cleanly and put it first in the chain." },
+    { "theremin",
+      "A theremin: a pure, singing tone that glides along your pitch without starting each note afresh, so slides, "
+      "bends and vibrato become eerie theremin swoops, with an old instrument's wobble. Play slow single-note "
+      "lines; put it first in the chain and add reverb." },
+    { "synclead",
+      "A hard-sync lead: a saw restarted by each cycle of your note, so it keeps your pitch while a hard, vocal "
+      "band of harmonics screams on top; every pick sweeps it. Play single notes; put it first in the chain." },
+    { "pdsynth",
+      "A phase distortion synth in the style of the Casio CZ: a soft wave bent into a saw, square, pulse or "
+      "resonant sweep, brighter on every pick: glassy, digital basses, leads and electric pianos. Play single "
+      "notes; put it first in the chain." },
+    { "wavetable",
+      "A wavetable synth: it morphs through a table of waves (vowels, metal, pulses, digital combs) as you dig in "
+      "or as an LFO sweeps, so your dynamics change the sound itself. Play single notes; put it first in the "
+      "chain." },
+    { "subbass",
+      "A Moog-style bass synth: a round or buzzy wave an octave down with a sine below it, through a warm ladder "
+      "filter, so a guitarist can cover the bass part. Play single notes; put it first in the chain." },
+    { "laser",
+      "A sci-fi laser: every pick zaps down from high above your note to it, can fire again and again while the "
+      "note rings, and echoes away. For effects and fun. Play single notes; put it first in the chain." },
+    { "drone",
+      "A drone that follows your key: it listens to what you play, works out the root (and its fifth), and holds a "
+      "slowly breathing drone on it under your guitar, which passes untouched. Put it anywhere; before reverb for "
+      "an ambient bed." },
+    { "harmonicpainter",
+      "An additive synth that paints your note's tone from its harmonics: their brightness, the odd/even balance, "
+      "a stretch that makes them bell-like, and a shimmer that keeps them moving: organs, flutes, bells and glassy "
+      "pads. Play single notes; put it first in the chain." },
     { "sympathetic",
       "Twelve strings tuned to a key, which ring along when you play their notes, like the drone strings of a "
       "sitar or a harp left undamped: a shimmering halo that follows the harmony. Put it after drive and before "

@@ -20,7 +20,8 @@ namespace {
 // off this list when its photo and face are added.
 bool awaitingPhoto(const std::string& typeId)
 {
-    static const std::vector<std::string> kAwaiting = {}; // none right now
+    static const std::vector<std::string> kAwaiting = { "theremin", "synclead", "pdsynth",  "wavetable",
+                                                        "subbass",  "laser",    "drone",    "harmonicpainter" };
     for (const std::string& id : kAwaiting)
         if (typeId == id)
             return true;

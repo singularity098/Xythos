@@ -671,6 +671,61 @@ const std::map<std::string, Draw>& drawings()
                  b.line(x0 + col * unit, y0 + row * unit);
          } },
 
+        { "theremin", [](Builder& b) { // the cabinet, its pitch rod and its volume loop
+             b.rect(30, 108, 94, 122);
+             b.polyline({ { 84, 108 }, { 84, 66 } });
+             b.polyline({ { 42, 108 }, { 42, 100 } });
+             b.circle(42, 90, 10);
+         } },
+        { "synclead", [](Builder& b) { // a saw restarted by each cycle of the note
+             for (const float x0 : { 26.0f, 62.0f })
+             {
+                 b.polyline({ { x0, 116 }, { x0 + 14, 82 }, { x0 + 14, 116 }, { x0 + 28, 82 }, { x0 + 28, 116 },
+                              { x0 + 36, 100 }, { x0 + 36, 116 } });
+             }
+         } },
+        { "pdsynth", [](Builder& b) { // a cosine bent into a saw
+             b.plot(28, 96, [](float u) {
+                 constexpr float m = 0.18f;
+                 const float q = u < m ? 0.5f * u / m : 0.5f + 0.5f * (u - m) / (1.0f - m);
+                 return 98.0f + 18.0f * std::cos(2.0f * kPi * q);
+             }, 60);
+         } },
+        { "wavetable", [](Builder& b) { // waves one behind the other, changing shape
+             b.plot(44, 100, [](float u) { return 82.0f - 7.0f * sine(u, 2.0f) - 3.0f * sine(u, 6.0f); });
+             b.plot(36, 92, [](float u) { return 98.0f - 7.0f * sine(u, 2.0f) - 2.0f * sine(u, 4.0f); });
+             b.plot(28, 84, [](float u) { return 114.0f - 7.0f * sine(u, 2.0f); });
+         } },
+        { "subbass", [](Builder& b) { // a deep, slow wave under a faster one
+             b.plot(26, 98, [](float u) { return 104.0f - 18.0f * sine(u, 1.0f); });
+             b.plot(26, 98, [](float u) { return 76.0f - 5.0f * sine(u, 4.0f); }, 64);
+         } },
+        { "laser", [](Builder& b) { // a burst and a beam diving into a slower wave
+             for (int k = 0; k < 6; ++k)
+             {
+                 const float a = rad(60.0f * k);
+                 b.polyline({ { 32 + 4 * std::cos(a), 98 + 4 * std::sin(a) }, { 32 + 10 * std::cos(a), 98 + 10 * std::sin(a) } });
+             }
+             b.plot(44, 100, [](float u) { return 98.0f - 12.0f * std::sin(2.0f * kPi * 6.0f * (1.0f - (1.0f - u) * (1.0f - u))); }, 96);
+         } },
+        { "drone", [](Builder& b) { // three held notes: root, fifth, octave
+             for (const auto& [y, x1] : { std::pair { 112.0f, 96.0f }, std::pair { 98.0f, 88.0f }, std::pair { 84.0f, 80.0f } })
+             {
+                 b.polyline({ { 36, y }, { x1, y } });
+                 b.dot(32, y, 3);
+             }
+         } },
+        { "harmonicpainter", [](Builder& b) { // harmonics as bars, under a brush stroke
+             for (int k = 0; k < 8; ++k)
+             {
+                 const float x = 32.0f + 8.0f * k;
+                 const float h = 34.0f / (1.0f + 0.45f * k);
+                 b.polyline({ { x, 120 }, { x, 120 - h } });
+             }
+             b.move(30, 78);
+             b.curve(48, 70, 70, 92, 94, 76);
+         } },
+
         // Filter
         { "filter", lowPass },
         { "robotfilter", [](Builder& b) { // a robot

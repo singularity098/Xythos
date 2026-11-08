@@ -62,7 +62,20 @@ public:
             float left, right;
             render(note, left, right);
             const float mix = fMix.next();
-            if (numChannels == 1)
+            if (fAddsToDry)
+            {
+                // the synth under the guitar, which always passes (Mix is the synth's level)
+                if (numChannels == 1)
+                {
+                    io[0][i] += 0.5f * (left + right) * mix;
+                }
+                else
+                {
+                    io[0][i] += left * mix;
+                    io[1][i] += right * mix;
+                }
+            }
+            else if (numChannels == 1)
             {
                 io[0][i] = io[0][i] * (1.0f - mix) + 0.5f * (left + right) * mix;
             }
@@ -123,6 +136,8 @@ protected:
     }
 
     void setPickFilter(float ms) { fInput.setPickFilter(ms); }
+    // The synth is added to the dry signal instead of replacing it by Mix (the Drone Keeper)
+    void setAddsToDry(bool adds) { fAddsToDry = adds; }
     void setTrack(float choice) { fInput.setTrackRig(choice); }
 
 public:
@@ -159,6 +174,7 @@ private:
     float fAmp = 0.0f;
     float fAmpAttack = 1.0f, fAmpRelease = 1.0f;
     bool fSnap = true;
+    bool fAddsToDry = false;
 };
 
 } // namespace xythos
