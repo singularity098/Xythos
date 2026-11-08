@@ -2526,7 +2526,7 @@ constexpr TypeHelp kTypeHelp[] = {
     { "midiout",
       "Turns your playing into MIDI notes, to play a synth or sampler plugin from your guitar. In Reaper, put the "
       "synth after Xythos in the same FX chain (it receives the notes), or send the track's MIDI to another track. "
-      "Mono follows single notes with pitch bend; Poly sends chords. Lookahead makes the notes start on time." },
+      "It follows single notes, with pitch bend. Lookahead makes the notes start on time." },
     { "fart",
       "Plays a fart at the pitch of every note you pick: thirteen kinds, from a tiny squeak to a motorboat, or a "
       "random one each time. Because why not. Play single notes; an octave down sounds best." },

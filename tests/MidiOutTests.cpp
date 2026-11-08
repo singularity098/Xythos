@@ -318,30 +318,27 @@ TEST_CASE("midi out sends from the pick with lookahead")
     CHECK(at < 104.0);
 }
 
-TEST_CASE("midi out (poly) sends the notes of a chord, and ends them")
+TEST_CASE("midi out: Poly mode is deactivated, the block sends Mono")
 {
-    auto block = midiOut();
-    block->setParam(kMidiOutParamMode, 1.0f);
-    // A major, strummed: A2 E3 A3 C#4 E4 (the octave doublings may count as overtones)
+    // owner, 2026-11-08: Mode is ignored, so a project saved with Poly sends what Mono sends
+    auto mono = midiOut();
+    auto poly = midiOut();
+    poly->setParam(kMidiOutParamMode, 1.0f);
     std::vector<guitar::Note> chord;
     const int notes[] = { 45, 52, 57, 61, 64 };
     for (int k = 0; k < 5; ++k)
         chord.push_back(pick(notes[k], 0.1 + 0.012 * k, 0.8 - 0.012 * k, k + 1));
     const auto p = play(chord, 1.5);
-    std::vector<std::vector<float>> x = { p.signal };
-    const auto sent = runMidi(*block, x);
-    const auto ons = only(sent, 0x90), offs = only(sent, 0x80);
-    std::vector<int> played;
-    for (const Sent& s : ons)
-        played.push_back(s.a);
-    CAPTURE(played.size());
-    // the root, the third and the fifth are all sent, and nothing outside the chord
-    for (const int n : { 45, 52, 61 })
-        CHECK(std::count(played.begin(), played.end(), n) >= 1);
-    for (const int n : played)
-        CHECK(std::find(std::begin(notes), std::end(notes), n) != std::end(notes));
-    // every note that went on went off again
-    CHECK(offs.size() == ons.size());
+    std::vector<std::vector<float>> x = { p.signal }, y = { p.signal };
+    const auto a = runMidi(*mono, x), b = runMidi(*poly, y);
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        CHECK(a[i].time == b[i].time);
+        CHECK(a[i].status == b[i].status);
+        CHECK(a[i].a == b[i].a);
+        CHECK(a[i].b == b[i].b);
+    }
 }
 
 
