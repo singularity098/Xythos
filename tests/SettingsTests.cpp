@@ -25,6 +25,7 @@ TEST_CASE("settings round-trip through JSON and a file")
     settings.recentPresets = { "/a.xythos", "/b.xythos" };
     settings.defaultPreset = "/presets/Clean/Twin.xythos";
     settings.checkUpdates = false;
+    settings.touchMode = true;
     settings.dismissedUpdate = "1.2.0";
     settings.cabImages = { { "00112233445566778899aabbccddeeff", "4x12-3" }, { "/irs/no hash.wav", "1x10-1" } };
     settings.pedalImages = { { "ffeeddccbbaa99887766554433221100", "pedal-7" } };

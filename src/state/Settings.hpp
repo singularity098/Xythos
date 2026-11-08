@@ -31,6 +31,9 @@ struct Settings {
     std::string defaultPreset;   // loaded into new plugin instances; empty for none
     std::vector<std::string> recentPresets; // most recent first
     bool checkUpdates = true;    // ask GitHub once a day for a newer release (src/state/UpdateCheck.hpp)
+    // Touch mode (owner, 2026-11-08: a touchscreen on the pedalboard): a long press acts as a right-click (or shows the
+    // help), dragging scrolls the chain and lists, taps reach controls a little outside them, no hover help
+    bool touchMode = false;
     std::string dismissedUpdate; // the release whose banner was closed: it and older ones stay hidden
     std::map<std::string, std::string> cabImages; // IR content hash -> the built-in cab image the user picked for it
     std::map<std::string, std::string> pedalImages; // NAM pedal content hash -> the generic pedal image picked for it

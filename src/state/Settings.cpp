@@ -36,6 +36,7 @@ std::string Settings::toJson() const
         { "defaultPreset", defaultPreset },
         { "recentPresets", recentPresets },
         { "checkUpdates", checkUpdates },
+        { "touchMode", touchMode },
         { "dismissedUpdate", dismissedUpdate },
         { "cabImages", cabImages },
         { "pedalImages", pedalImages },
@@ -80,6 +81,7 @@ Settings Settings::fromJson(std::string_view text)
         get("defaultPreset", settings.defaultPreset);
         get("recentPresets", settings.recentPresets);
         get("checkUpdates", settings.checkUpdates);
+        get("touchMode", settings.touchMode);
         get("dismissedUpdate", settings.dismissedUpdate);
         get("cabImages", settings.cabImages);
         get("pedalImages", settings.pedalImages);

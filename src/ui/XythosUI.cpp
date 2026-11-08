@@ -139,6 +139,12 @@ constexpr float kCompactCellHeight = 104.0f; // rows this tight when that makes 
 constexpr float kPanelMargin = 16.0f;
 constexpr float kListBarWidth = 14.0f; // a dialog list's scroll bar, at its right edge
 constexpr uint kDoubleClickMs = 350;
+// Touch mode (Settings::touchMode): a press held this long without moving acts as a right-click; a finger that moves
+// further than kTouchMoveSlop starts a drag; taps reach a control up to kTouchHitSlop outside it
+constexpr auto kLongPress = std::chrono::milliseconds(550);
+constexpr auto kLongPressRing = std::chrono::milliseconds(150); // the ring under the finger shows from here
+constexpr float kTouchMoveSlop = 10.0f;
+constexpr float kTouchHitSlop = 10.0f;
 constexpr auto kTunerHold = std::chrono::milliseconds(1000); // the tuner keeps showing the last note this long
 
 // The Lookahead button of the pitch-following blocks opens a menu of these (ms; 0 = off)
@@ -236,6 +242,7 @@ enum class Hit {
     SettingsParallel,
     SettingsTheme,  // index = position in ink::themes()
     SettingsUpdates, // the update check on/off
+    SettingsTouch,  // touch mode on/off
     UpdateOpen,     // the update banner: open the release page
     UpdateDismiss,  // the update banner's ×: hide it for this version
     PresetMenu,
@@ -895,6 +902,7 @@ protected:
         else if (fDialog == Dialog::CabImages)
             drawCabDialog();
         drawHelp();
+        drawTouchRing();
         drawScanlines();
         if (fShowFps)
             drawFps(drawStart);
@@ -912,6 +920,19 @@ protected:
 
         if (!ev.press)
         {
+            if (ev.button == kMouseButtonLeft && fTouchSwallow)
+            {
+                // the long press already acted (a right-click or the help)
+                fTouchSwallow = false;
+                return true;
+            }
+            if (ev.button == kMouseButtonLeft && fTouchPending)
+            {
+                // a tap: the press it held back, then its release
+                fTouchPending = false;
+                onLeftPress(fTouchX, fTouchY, fTouchTime, fTouchMod);
+                return onRelease(x, y);
+            }
             if (ev.button == kMouseButtonLeft)
                 return onRelease(x, y);
             if (ev.button == kMouseButtonMiddle && fPanning)
@@ -948,8 +969,38 @@ protected:
         if (ev.button != kMouseButtonLeft)
             return false;
 
-        const bool doubleClick = ev.time - fLastClickTime < kDoubleClickMs;
-        fLastClickTime = ev.time;
+        if (fSettings.touchMode)
+        {
+            // a new touch puts away the help the last long press showed
+            if (fTouchHelp)
+            {
+                fTouchHelp = false;
+                repaint();
+            }
+            // Hold the press back until the finger lifts (a tap), moves (a drag) or stays (a long press: a
+            // right-click). Footswitch actions can't wait: the looper's Rec has to start on the press.
+            const HitArea* hit = hitAt(x, y);
+            if (!(hit && hit->kind == Hit::Momentary))
+            {
+                fTouchPending = true;
+                fTouchSwallow = false;
+                fTouchX = x;
+                fTouchY = y;
+                fTouchTime = ev.time;
+                fTouchMod = ev.mod;
+                fTouchAt = std::chrono::steady_clock::now();
+                fTouchRingShown = false;
+                return true;
+            }
+        }
+        return onLeftPress(x, y, ev.time, ev.mod);
+    }
+
+    // A left-button press (in touch mode, once onMouse() knows it's a tap or the start of a drag)
+    bool onLeftPress(float x, float y, uint time, uint mod)
+    {
+        const bool doubleClick = time - fLastClickTime < kDoubleClickMs;
+        fLastClickTime = time;
 
         const HitArea* hit = hitAt(x, y);
 
@@ -966,7 +1017,19 @@ protected:
             fLooperDeleteArmed = -1;
 
         if (hit == nullptr)
+        {
+            // touch mode: a finger on the chain's empty space drags it sideways, as middle-dragging does
+            const bool chainShown = !fMetroPanel && !fLooperPanel && fParams[kParamTuner] < 0.5f;
+            if (fSettings.touchMode && chainShown && fDialog == Dialog::None && y >= kChainTop - 12.0f
+                && y <= kChainTop + fLayout.height + 20.0f)
+            {
+                fPanning = true;
+                fScrollGrabX = x;
+                fScrollGrabValue = fScrollX;
+                return true;
+            }
             return false;
+        }
 
         switch (hit->kind)
         {
@@ -1219,7 +1282,7 @@ protected:
             if (doubleClick)
                 edit.selectWordAt(pos);
             else
-                edit.setCursor(pos, (ev.mod & kModifierShift) != 0);
+                edit.setCursor(pos, (mod & kModifierShift) != 0);
             fSelectingText = !doubleClick;
             repaint();
             return true;
@@ -1265,6 +1328,11 @@ protected:
 
         case Hit::SettingsUpdates:
             updateSettings([](Settings& settings) { settings.checkUpdates = !settings.checkUpdates; });
+            return true;
+
+        case Hit::SettingsTouch:
+            updateSettings([](Settings& settings) { settings.touchMode = !settings.touchMode; });
+            fTouchHelp = false;
             return true;
 
         case Hit::UpdateOpen:
@@ -1635,6 +1703,38 @@ protected:
         fMouseY = y;
         ++fMotionCount;
 
+        if (fTouchSwallow)
+            return true;
+        if (fTouchPending)
+        {
+            const float dx = x - fTouchX, dy = y - fTouchY;
+            if (std::fabs(dx) <= kTouchMoveSlop && std::fabs(dy) <= kTouchMoveSlop)
+                return true;
+            fTouchPending = false;
+            repaint(); // the long-press ring goes
+            // a vertical drag over a dialog's scrolling list scrolls it, wherever it starts in the list
+            if (fDialog != Dialog::None && fListMaxScroll > 0.0f && std::fabs(dy) > std::fabs(dx)
+                && fTouchY >= fListTrack.y && fTouchY <= fListTrack.y + fListTrack.h && fTouchX < fListTrack.x)
+            {
+                fTouchListScroll = true;
+                fListGrabY = fTouchY;
+                fListGrabValue = fListScroll;
+            }
+            else
+            {
+                onLeftPress(fTouchX, fTouchY, fTouchTime, fTouchMod);
+                // a knob turns from here, not by the slop the finger already moved
+                fDragStartX = x;
+                fDragStartY = y;
+            }
+        }
+        if (fTouchListScroll)
+        {
+            fListScroll = std::clamp(fListGrabValue - (y - fListGrabY), 0.0f, fListMaxScroll);
+            repaint();
+            return true;
+        }
+
         if (fPanning)
         {
             setScrollX(fScrollGrabValue - (x - fScrollGrabX));
@@ -1906,6 +2006,8 @@ protected:
     void uiIdle() override
     {
         ++fIdleCount;
+        if (fTouchPending)
+            checkLongPress();
         pollPhaseCheck();
         if (fShowFps)
             repaint(); // the readout itself counts frames, so keep drawing
@@ -4695,6 +4797,17 @@ private:
 
     bool onRelease(float x, float y)
     {
+        if (fTouchListScroll)
+        {
+            fTouchListScroll = false;
+            return true;
+        }
+        if (fPanning)
+        {
+            fPanning = false;
+            repaint();
+            return true;
+        }
         if (fSelectingText)
         {
             fSelectingText = false;
@@ -4777,12 +4890,77 @@ private:
     const HitArea* hitAt(float x, float y) const
     {
         // last drawn is on top
-        for (auto it = fHits.rbegin(); it != fHits.rend(); ++it)
+        size_t found = fHits.size();
+        for (size_t i = fHits.size(); i-- > 0;)
         {
-            if (it->rect.contains(x, y))
-                return &*it;
+            if (fHits[i].rect.contains(x, y))
+            {
+                found = i;
+                break;
+            }
         }
-        return nullptr;
+        const bool background = found < fHits.size()
+            && (fHits[found].kind == Hit::DialogBackdrop || fHits[found].kind == Hit::DialogPanel);
+        if (!fSettings.touchMode || (found < fHits.size() && !background))
+            return found < fHits.size() ? &fHits[found] : nullptr;
+
+        // Touch mode: a finger is wider than a pointer, so a tap just outside a control takes the nearest one, among
+        // what's drawn over the dialog it landed on (or anywhere, if it landed on nothing)
+        const HitArea* nearest = nullptr;
+        float best = kTouchHitSlop;
+        for (size_t i = found < fHits.size() ? found + 1 : 0; i < fHits.size(); ++i)
+        {
+            const HitArea& hit = fHits[i];
+            if (hit.kind == Hit::DialogBackdrop || hit.kind == Hit::DialogPanel)
+                continue;
+            const float dx = std::max({ hit.rect.x - x, 0.0f, x - (hit.rect.x + hit.rect.w) });
+            const float dy = std::max({ hit.rect.y - y, 0.0f, y - (hit.rect.y + hit.rect.h) });
+            const float distance = std::max(dx, dy);
+            if (distance <= best) // later (drawn on top) wins a tie
+            {
+                best = distance;
+                nearest = &hit;
+            }
+        }
+        return nearest != nullptr ? nearest : found < fHits.size() ? &fHits[found] : nullptr;
+    }
+
+    // Touch mode: a press that has stayed put long enough acts as a right-click; where that does nothing, it shows the
+    // help for what's under the finger instead (there's no hovering on a touchscreen)
+    void checkLongPress()
+    {
+        const auto held = std::chrono::steady_clock::now() - fTouchAt;
+        if (!fTouchRingShown && held >= kLongPressRing)
+        {
+            fTouchRingShown = true;
+            repaint();
+        }
+        if (held < kLongPress)
+            return;
+        fTouchPending = false;
+        fTouchSwallow = true;
+        repaint();
+        if (onRightClick(fTouchX, fTouchY))
+            return;
+        if (const HitArea* hit = hitAt(fTouchX, fTouchY); hit && helpFor(*hit).body != nullptr)
+        {
+            fTouchHelp = true;
+            fTouchHelpX = fTouchX;
+            fTouchHelpY = fTouchY;
+        }
+    }
+
+    // Touch mode: a ring under the finger while a press is held still, before it becomes a long press. Drawn once,
+    // not animated (no animation outside the tuner)
+    void drawTouchRing()
+    {
+        if (!fTouchPending || !fTouchRingShown)
+            return;
+        beginPath();
+        circle(fTouchX, fTouchY, 26.0f);
+        strokeColor(theme::accent.withAlpha(0.8f));
+        strokeWidth(2.0f);
+        stroke();
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -5441,7 +5619,7 @@ private:
             return { "Settings",
                      "Opens the settings: the folders for your NAM and IR files, the default NAM A2 size, volume "
                      "normalization for new blocks, parallel processing of a split on a second CPU core, the "
-                     "highlight colour, and the daily check for a new version." };
+                     "daily check for a new version, touch mode for touchscreens, and the theme." };
         case Hit::UpdateOpen:
             return { "New Version",
                      "A newer version of Xythos has been released. Click to open its release page in your web "
@@ -5451,6 +5629,13 @@ private:
             return { "Hide",
                      "Hides this notice until there's an even newer version. To stop checking altogether, turn off "
                      "Check for updates in the settings." };
+        case Hit::SettingsTouch:
+            return { "Touch Mode",
+                     "For a touchscreen, such as one on a pedalboard. Hold a finger on something to do what a "
+                     "right-click does (MIDI Learn, image choosers), or to read its help where there's no menu. Drag "
+                     "the chain's empty space to scroll it and drag lists up and down. Taps reach controls a little "
+                     "outside them, and help no longer pops up wherever the pointer rests. Turn it off for a "
+                     "mouse." };
         case Hit::SettingsUpdates:
             return { "Check for Updates",
                      "Once a day, Xythos asks GitHub for the version number of its latest release and shows a "
@@ -5525,7 +5710,10 @@ private:
     void drawHelp()
     {
         const auto now = std::chrono::steady_clock::now();
-        const HitArea* hit = mouseBusy() ? nullptr : hitAt(fMouseX, fMouseY);
+        // touch mode has no hover: the help shows after a long press on something without a right-click menu
+        const bool touch = fSettings.touchMode;
+        const HitArea* hit = touch ? (fTouchHelp ? hitAt(fTouchHelpX, fTouchHelpY) : nullptr)
+                                   : mouseBusy() ? nullptr : hitAt(fMouseX, fMouseY);
         const HelpText help = hit != nullptr ? helpFor(*hit) : HelpText {};
         const int kind = help.body != nullptr ? static_cast<int>(hit->kind) : -1;
         const int index = help.body != nullptr ? hit->index : -1;
@@ -5535,9 +5723,10 @@ private:
             fHelpIndex = index;
             fHelpSince = now;
             fHelpShown = false;
-            return;
+            if (!touch)
+                return;
         }
-        if (kind < 0 || now - fHelpSince < kHelpDelay)
+        if (kind < 0 || (!touch && now - fHelpSince < kHelpDelay))
             return;
         fHelpShown = true;
 
@@ -10061,6 +10250,13 @@ private:
               ALIGN_LEFT | ALIGN_MIDDLE);
         row += rowH;
 
+        rowLabel("Touch mode");
+        drawButton({ controlX, row, 72.0f, 28.0f }, fSettings.touchMode ? "On" : "Off", fSettings.touchMode,
+                   theme::accent, Hit::SettingsTouch, 0);
+        label(controlX + 88.0f, row + 14.0f, "for touchscreens: hold for right-click or help, drag to scroll",
+              theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+        row += rowH;
+
         // A fixed look per theme (owner, 2026-11-08): six to a row, each with its colours along the bottom edge
         rowLabel("Theme");
         const auto& looks = ink::themes();
@@ -10215,6 +10411,16 @@ private:
     float fDragStartY = 0.0f;
     float fDragStartValue = 0.0f;
     uint fLastClickTime = 0;
+    // Touch mode (Settings::touchMode): the press held back until it's a tap, a drag or a long press (onMouse())
+    bool fTouchPending = false;
+    bool fTouchSwallow = false;    // a long press acted: the rest of that touch does nothing
+    bool fTouchRingShown = false;  // drawTouchRing() is showing
+    bool fTouchListScroll = false; // dragging a dialog's list
+    float fTouchX = 0.0f, fTouchY = 0.0f;
+    uint fTouchTime = 0, fTouchMod = 0;
+    std::chrono::steady_clock::time_point fTouchAt;
+    bool fTouchHelp = false;       // a long press showed the help for what's at fTouchHelpX/Y, until the next touch
+    float fTouchHelpX = 0.0f, fTouchHelpY = 0.0f;
     int fScrollKnob = -1; // the knob last turned with the wheel, and when
     std::chrono::steady_clock::time_point fScrollKnobAt;
 
