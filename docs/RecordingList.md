@@ -1,12 +1,13 @@
-# Recordings wanted: note tracking for guitar and 5-string bass
+# Recordings wanted: note tracking for 7-string guitar and 5-string bass, both in drop A
 
 What I need from you to (1) make the mono synths track better, (2) get polyphonic tracking working well
-enough to turn back on, and (3) track a 5-string bass tuned to drop A, down to its low A0 (27.5 Hz). Each file
+enough to turn back on, and (3) track a 7-string guitar in drop A (down to A1, 55 Hz) and a 5-string bass in
+drop A (down to A0, 27.5 Hz). Each file
 below becomes a benchmark clip next to the eight in `tests/recordings/`. I write its note list from this sheet
 and the click grid, then check it against the audio, so you only have to play what's written.
 
 Priority: **[1]** essential, **[2]** important, **[3]** nice to have. If you only have one evening, record every
-[1]. There are 44 files and about 75 minutes of playing; the [1] files are about 35 minutes.
+[1]. There are 46 files and about 80 minutes of playing; the [1] files are about 40 minutes.
 
 ---
 
@@ -25,8 +26,10 @@ Priority: **[1]** essential, **[2]** important, **[3]** nice to have. If you onl
 - Use the **exact filenames** given below (`gtr-...` guitar, `bass-...` bass).
 
 **Tuning**
-- Guitar: standard E A D G B E, **A = 440 Hz**. Tune with a tuner before each file. (The old recordings were
-  about 20 cents sharp, which I can work with, but in tune is better.)
+- Guitar: 7-string **drop A**: A1 E2 A2 D3 G3 B3 E4 (the low B string tuned down a whole step to A; the other
+  six strings are standard), **A = 440 Hz**. Tune with a tuner before each file, and re-tune the low A often: a
+  slack string drifts. (The old recordings were about 20 cents sharp, which I can work with, but in tune is
+  better.)
 - Bass: 5-string **drop A**: A0 E1 A1 D2 G2 (the low B string tuned down a whole step to A), A = 440 Hz.
   Re-tune the low A before every bass file: a slack string drifts.
 
@@ -47,10 +50,12 @@ Priority: **[1]** essential, **[2]** important, **[3]** nice to have. If you onl
 - One continuous take per file. Don't punch in or comp.
 
 **Notation used below**
-- Notes in scientific pitch: guitar low E = E2, its high E = E4; bass low A = A0.
-- `s:f` = string:fret. Guitar strings are 6 (low E) to 1 (high E). Bass strings are 5 (low A) to 1 (G).
-  Example: guitar `2:8` = B string, 8th fret = G4.
-- Chord shapes are written low string to high, guitar style: `x32010` = C major.
+- Notes in scientific pitch: guitar low A = A1, its E string = E2, its high E = E4; bass low A = A0.
+- `s:f` = string:fret. Guitar strings are 7 (low A) to 1 (high E). Bass strings are 5 (low A) to 1 (G).
+  Example: guitar `2:8` = B string, 8th fret = G4; `7:3` = low A string, 3rd fret = C2.
+- Chord shapes are written low string to high, guitar style. A six-character shape is strings 6 to 1, with
+  the low A string (7) **not played** (mute it): `x32010` = C major. A seven-character shape includes
+  string 7: `0x02220` = A major with the low A1 under it.
 - "Mute" means stop the note dead with either hand.
 
 **Standard pattern "2 per bar"** (used by the chromatic files): pick a note on beat 1 and let it ring through
@@ -75,8 +80,8 @@ what keeps notes from being cut short or invented.
 
 ### `gtr-mono-chromatic-neck.wav` [1]
 - **80 BPM, neck pickup.** Pattern "2 per bar".
-- Every string, open to the 12th fret, low E first: 6:0, 6:1, ... 6:12, then 5:0 ... 5:12, then 4, 3, 2, 1.
-- That's 78 notes in 39 bars (bars 3-41), E2 up to E5.
+- Every string, open to the 12th fret, low A first: 7:0, 7:1, ... 7:12, then 6:0 ... 6:12, then 5, 4, 3, 2, 1.
+- That's 91 notes in 46 bars (bars 3-48), A1 up to E5.
 - Tests: every note of the guitar's main range, how quickly each one is found, and the note-off when muted.
 
 ### `gtr-mono-chromatic-bridge.wav` [1]
@@ -149,13 +154,15 @@ what keeps notes from being cut short or invented.
 - Bars 11-14: the same on open low E (E2).
 - Bars 15-16: 16 eighth notes on G3, a crescendo from very soft to very hard.
 - Bars 17-18: 16 eighth notes on G3, a decrescendo back to very soft.
+- Bars 19-22: 8 picks of open low A (A1), barely touching to as hard as you can, on beats 1 and 3.
 - Tests: velocity tracking, and that soft notes are still found.
 
 ### `gtr-mono-sustain.wav` [1]
 - **60 BPM (4 s per bar), neck pickup.** Pick one note and let it ring with no vibrato, for 16 s (4 bars).
   Mute it on beat 4 of the 4th bar, then pick the next note on the following downbeat.
 - Bar 3: E2 (open 6). Bar 7: G3 (`4:5`). Bar 11: D4 (`3:7`). Bar 15: E5 (`1:12`). Bar 19: a G chord
-  (`320003`), strummed once.
+  (`320003`), strummed once. Bar 23: A1 (open 7). Bar 27: C2 (`7:3`). Bar 31: an A5 power chord on the three
+  low strings, all open (`000xxxx`: A1 E2 A2), strummed once.
 - Tests: holding the note as long as it's audible, and ending it cleanly as it fades into the noise, without
   octave jumps in the tail.
 
@@ -163,7 +170,7 @@ what keeps notes from being cut short or invented.
 - **100 BPM, bridge pickup.**
 - Bars 3-4: palm-muted eighth notes on open low E (E2).
 - Bars 5-6: palm-muted eighths, the riff `6:0 6:0 6:3 6:0 6:5 6:0 6:6 6:5` (E2 E2 G2 E2 A2 E2 A#2 A2), twice.
-- Bars 7-8: dead notes only. Fretting hand lightly on strings 4-6, sixteenth-note "chicka" strums. **No pitched
+- Bars 7-8: dead notes only. Fretting hand lightly on strings 4-7, sixteenth-note "chicka" strums. **No pitched
   notes:** these should trigger nothing.
 - Bars 9-10: A3 (`3:2`) on beats 1 and 3, ringing for a quarter note, with dead-note sixteenths filling the rest.
 - Bars 11-12: a muted rake across strings 6 to 2, landing on E4 (`2:5`) on beat 1 of each bar, letting the E4
@@ -172,8 +179,8 @@ what keeps notes from being cut short or invented.
 
 ### `gtr-mono-harmonics.wav` [2]
 - **70 BPM, neck pickup.** Pattern "2 per bar", natural harmonics.
-- 12th fret, strings 6 to 1 (E3 A3 D4 G4 B4 E5); then 7th fret, strings 6 to 1 (B3 E4 A4 D5 F#5 B5); then 5th
-  fret, strings 6 to 1 (E4 A4 D5 G5 B5 E6). That's 18 harmonics, bars 3-11.
+- 12th fret, strings 7 to 1 (A2 E3 A3 D4 G4 B4 E5); then 7th fret, strings 7 to 1 (E3 B3 E4 A4 D5 F#5 B5);
+  then 5th fret, strings 7 to 1 (A3 E4 A4 D5 G5 B5 E6). That's 21 harmonics, bars 3-13.
 - Tests: pure tones with no fundamental below them.
 
 ### `gtr-mono-lick.wav` [1]
@@ -187,6 +194,23 @@ what keeps notes from being cut short or invented.
   beat 4 `5:5` D3 (quarter).
 - Bar 6: beat 1 slide `5:5` → `5:7` (D3 → E3) · beat 2 `6:8` C3 · beats 3-4 `6:5` A2, half note with vibrato.
 - Tests: a realistic phrase that mixes everything.
+
+### `gtr-mono-low.wav` [1]
+- **100 BPM, bridge pickup.** The low A string, the way a drop-A riff uses it.
+- Bars 3-4: eighth notes on open A1 (string 7).
+- Bars 5-6: sixteenth notes on A1.
+- Bars 7-8: palm-muted chugs on A1 in sixteenths with rests, each bar: beat 1 four sixteenths · beat 2 rest ·
+  beat 3 two sixteenths then rest · beat 4 four sixteenths.
+- Bars 9-10: palm-muted eighths, the riff `7:0 7:0 7:3 7:0 7:5 7:0 7:6 7:5` (A1 A1 C2 A1 D2 A1 D#2 D2), twice.
+- Bars 11-18: A natural minor from A1, two octaves, quarter notes, legato, up and back down:
+  `7:0 7:2 7:3 7:5 6:0 6:1 6:3 5:0 5:2 5:3 4:0 4:2 4:3 3:0 3:2`
+  = A1 B1 C2 D2 E2 F2 G2 A2 B2 C3 D3 E3 F3 G3 A3 (29 notes, then hold A1 to the end of bar 18).
+- Bar 19: `7:3` hammer-on to `7:5` on beat 2 (C2 → D2), mute on beat 4.
+- Bar 20: `7:5` pull-off to `7:3` on beat 2, mute on beat 4.
+- Bar 21: long slide `7:2` → `7:12` (B1 → A2), pick on beat 1, arrive on beat 3.
+- Bars 22-23: a gallop on A1, each beat an eighth note and two sixteenths (A1, A1-A1).
+- Tests: the new bottom of the guitar's range, where the mono tracker now has to look an octave lower than a
+  6-string needs.
 
 ### `gtr-mono-drone.wav` [2]
 - **80 BPM, neck pickup.** Open D3 (string 4) picked on beat 1 of every bar and left ringing. A melody on beats
@@ -307,6 +331,31 @@ Use the **middle pickup position (neck + bridge)** for these, unless the file sa
 - Bar 6: A `x02220`, ringing the whole bar
 - Bars 7-10: the same again.
 - Tests: switching between chords and single notes, the way people actually play.
+
+### `gtr-poly-drop-a.wav` [1]
+- **90 BPM, bridge pickup.** Chords on the low A string.
+- Bars 3-8: one downstroke per half note (beats 1 and 3), ringing until the next, two chords a bar:
+
+| Chord | Shape (`s:f`) | Notes |
+|---|---|---|
+| A5 | `7:0 6:0 5:0` | A1 E2 A2 |
+| C5 | `7:3 6:3 5:3` | C2 G2 C3 |
+| D5 | `7:5 6:5 5:5` | D2 A2 D3 |
+| E5 | `7:7 6:7 5:7` | E2 B2 E3 |
+| F5 | `7:8 6:8 5:8` | F2 C3 F3 |
+| G5 | `7:10 6:10 5:10` | G2 D3 G3 |
+| A5, two notes | `7:0 6:0` | A1 E2 |
+| A5, four notes | `7:0 6:0 5:0 4:2` | A1 E2 A2 E3 |
+| A over low A | `0x02220` | A1 A2 E3 A3 C#4 E4 |
+| Am over low A | `0x02210` | A1 A2 E3 A3 C4 E4 |
+| D/A | `0xx0232` | A1 D3 A3 D4 F#4 |
+| Asus2 over low A | `0x02200` | A1 A2 E3 A3 B3 E4 |
+
+- Bars 9-16: palm-muted eighth notes, three-string power chords (shapes as above; D#5 = `7:6 6:6 5:6`):
+  - Bar A: A5 A5 A5 C5 A5 A5 D5 D#5
+  - Bar B: A5 A5 A5 A5 E5 E5 F5 E5
+  - A B A B A B A B.
+- Tests: chords whose lowest note is an octave below a 6-string's, which is where octave errors are worst.
 
 ### `gtr-poly-funk.wav` [2]
 - **100 BPM, bridge pickup.**
@@ -462,7 +511,7 @@ and by analysis, so they take me longest. Add a line to the log about what you p
 One plain text file to send with the recordings. Something like this:
 
 ```
-Guitar: <make/model>, pickups: <e.g. humbuckers / single coils>, strings: <gauge>
+Guitar: <make/model> (7-string), pickups: <e.g. humbuckers / single coils>, strings: <gauge>
 Bass:   <make/model>, pickups: <...>, strings: <gauge>
 Interface: <model>, input gain: <setting>
 DAW: <name>
@@ -494,34 +543,36 @@ bass-groove.wav               ok
 | 12 | gtr-mono-muted.wav | 1 | 100 |
 | 13 | gtr-mono-harmonics.wav | 2 | 70 |
 | 14 | gtr-mono-lick.wav | 1 | 85 |
-| 15 | gtr-mono-drone.wav | 2 | 80 |
-| 16 | gtr-poly-open-chords.wav | 1 | 70 |
-| 17 | gtr-poly-barre-chords.wav | 1 | 70 |
-| 18 | gtr-poly-power-chords.wav | 1 | 90 |
-| 19 | gtr-poly-strumming.wav | 1 | 90 |
-| 20 | gtr-poly-fingerpicked.wav | 1 | 80 |
-| 21 | gtr-poly-dyads.wav | 1 | 70 |
-| 22 | gtr-poly-voice-leading.wav | 2 | 70 |
-| 23 | gtr-poly-triads.wav | 2 | 70 |
-| 24 | gtr-poly-mixed.wav | 1 | 90 |
-| 25 | gtr-poly-funk.wav | 2 | 100 |
-| 26 | bass-chromatic-fingers.wav | 1 | 60 |
-| 27 | bass-chromatic-pick.wav | 1 | 60 |
-| 28 | bass-chromatic-neck.wav | 2 | 60 |
-| 29 | bass-chromatic-bridge.wav | 2 | 60 |
-| 30 | bass-high.wav | 2 | 70 |
-| 31 | bass-sustain.wav | 1 | 60 |
-| 32 | bass-eighths.wav | 1 | 120 |
-| 33 | bass-walking.wav | 1 | 100 |
-| 34 | bass-groove.wav | 1 | 90 |
-| 35 | bass-slurs.wav | 1 | 80 |
-| 36 | bass-muted.wav | 1 | 90 |
-| 37 | bass-slap.wav | 2 | 90 |
-| 38 | bass-octaves.wav | 2 | 110 |
-| 39 | bass-dynamics.wav | 2 | 70 |
-| 40 | bass-harmonics.wav | 3 | 70 |
-| 41 | bass-double-stops.wav | 2 | 70 |
-| 42 | bass-fast-scale.wav | 2 | 90 |
-| 43 | gtr-free-lead.wav / gtr-free-chords.wav | 3 | - |
-| 44 | bass-free.wav | 3 | - |
+| 15 | gtr-mono-low.wav | 1 | 100 |
+| 16 | gtr-mono-drone.wav | 2 | 80 |
+| 17 | gtr-poly-open-chords.wav | 1 | 70 |
+| 18 | gtr-poly-barre-chords.wav | 1 | 70 |
+| 19 | gtr-poly-power-chords.wav | 1 | 90 |
+| 20 | gtr-poly-strumming.wav | 1 | 90 |
+| 21 | gtr-poly-fingerpicked.wav | 1 | 80 |
+| 22 | gtr-poly-dyads.wav | 1 | 70 |
+| 23 | gtr-poly-voice-leading.wav | 2 | 70 |
+| 24 | gtr-poly-triads.wav | 2 | 70 |
+| 25 | gtr-poly-mixed.wav | 1 | 90 |
+| 26 | gtr-poly-drop-a.wav | 1 | 90 |
+| 27 | gtr-poly-funk.wav | 2 | 100 |
+| 28 | bass-chromatic-fingers.wav | 1 | 60 |
+| 29 | bass-chromatic-pick.wav | 1 | 60 |
+| 30 | bass-chromatic-neck.wav | 2 | 60 |
+| 31 | bass-chromatic-bridge.wav | 2 | 60 |
+| 32 | bass-high.wav | 2 | 70 |
+| 33 | bass-sustain.wav | 1 | 60 |
+| 34 | bass-eighths.wav | 1 | 120 |
+| 35 | bass-walking.wav | 1 | 100 |
+| 36 | bass-groove.wav | 1 | 90 |
+| 37 | bass-slurs.wav | 1 | 80 |
+| 38 | bass-muted.wav | 1 | 90 |
+| 39 | bass-slap.wav | 2 | 90 |
+| 40 | bass-octaves.wav | 2 | 110 |
+| 41 | bass-dynamics.wav | 2 | 70 |
+| 42 | bass-harmonics.wav | 3 | 70 |
+| 43 | bass-double-stops.wav | 2 | 70 |
+| 44 | bass-fast-scale.wav | 2 | 90 |
+| 45 | gtr-free-lead.wav / gtr-free-chords.wav | 3 | - |
+| 46 | bass-free.wav | 3 | - |
 | | recording-log.txt | 1 | |
