@@ -113,7 +113,8 @@ fuzz/                 Fuzz targets (fuzz/README.md): every parser of outside inp
                       -DXYTHOS_FUZZ=ON (clang), run by fuzz/run_all.sh and weekly in CI (.github/workflows/fuzz.yml)
 tests/recordings/     The owner's guitar recordings (MP3) and their note lists (<clip>.notes); decode them with
                       tools/decode_recordings.sh (ffmpeg) before XYTHOS_TRACKING_BENCH=1 ./build/xythos-tests -tc="*real recordings*"
-docs/                 Requirements, architecture, and the pedal image prompts (PedalImagePrompts.md)
+docs/                 Requirements, architecture, the pedal image prompts (PedalImagePrompts.md), and the recordings asked of the owner
+                      for note tracking, guitar and drop-A 5-string bass (RecordingList.md)
 cmake/                EmbedBlockImages.cmake: turns resources/blocks/*.webp into BlockImages.cpp at build time
 resources/logo/       The logo: xythos.svg (the master; dark UI) and xythos-light.svg (for light backgrounds, the README), rendered to PNGs by
                       tools/render_logo.js (also xythos-mark.png and xythos-wordmark.png, the layers the plugin embeds) (Node + Playwright: the glows are SVG filters); tools/embed_logo.py makes LogoImage.cpp
