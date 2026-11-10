@@ -2000,13 +2000,21 @@ constexpr BlockHelp kBlockHelp[] = {
     { "drumtrigger", "Dry",
       "How loud your guitar is under the drums. 0% plays the drums only; raise it to hear your strings as well." },
     { "fart", "Type",
-      "Which fart. Random picks a different one for every note; or choose your favourite, from a tiny Squeaker to "
-      "a long Motorboat." },
+      "Which fart. Random picks one for every note from the recordings closest in pitch to it, so high notes get the "
+      "squeakers and low notes the rumbles, never the same one twice running. Or choose your favourite: the list goes "
+      "from the lowest (Rumble) to the highest (Mouse)." },
     { "fart", "Length",
-      "Stretches or shortens every fart, from a quick toot to a long, drawn-out performance." },
-    { "fart", "Wetness",
-      "Adds the airy noise and the gurgles. Low settings are dry and buzzy; high settings, well, you know." },
-    { "fart", "Tone", "Moves the fart's resonance down (a deep, round rumble) or up (a thin, reedy squeak). 50% is as designed." },
+      "How much of each fart plays. 100% lets every one run its course; lower cuts them short with a quick fade, for "
+      "tight, rhythmic toots." },
+    { "fart", "Tone",
+      "Darkens the farts (turn it down: a muffled, under-the-blanket sound) or thins them out (turn it up: less "
+      "rumble, more squeak). 50% leaves them as recorded." },
+    { "fart", "Pitch",
+      "Follow plays each fart at the note you play, faster or slower like a sampler, so you can play a tune. Natural "
+      "plays them as they were recorded, whatever the note." },
+    { "fart", "Hold",
+      "One Shot lets every fart play to its end, however short your note. Held fades it out when you stop the note, "
+      "so short notes give short farts." },
     { "fart", "Octave", SYNTH_OCTAVE_HELP },
     { "fart", "Mix", SYNTH_MIX_HELP },
     { "fart", "Pick Filter", SYNTH_PICK_FILTER_HELP },
@@ -2493,8 +2501,9 @@ constexpr TypeHelp kTypeHelp[] = {
       "synth after Xythos in the same FX chain (it receives the notes), or send the track's MIDI to another track. "
       "Mono follows single notes with pitch bend; Poly sends chords. Lookahead makes the notes start on time." },
     { "fart",
-      "Plays a fart at the pitch of every note you pick: thirteen kinds, from a tiny squeak to a motorboat, or a "
-      "random one each time. Because why not. Play single notes; an octave down sounds best." },
+      "Plays a real fart recording at the pitch of every note you pick: 25 of them, from deep rumbles to tiny "
+      "squeaks, each pitched to your note like a sampler, picked at random from the ones nearest your note or chosen "
+      "by name. Because why not. Play single notes (or chords with Tracking on Poly); an octave down sounds best." },
 };
 
 struct GlobalHelp {

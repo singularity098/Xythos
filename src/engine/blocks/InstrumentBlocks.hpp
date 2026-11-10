@@ -9,27 +9,31 @@ namespace xythos {
 
 // Instruments played from your notes (blocks/TrackedSynth.hpp: single notes, or chords in Poly; Track and Lookahead
 // as in the synths).
-// Everything is synthesized in code.
+// Everything but the Fart's samples is synthesized in code.
 
-// Fart: every pick plays a fart at your note (an octave down by default). Thirteen kinds, from a squeaker to a
-// motorboat, or Random to pick one each time (never the same twice running). Each is a buzzing pulse at the note,
-// with the pitch bending its own way, a flutter in level, a jittery period, some airy noise and gurgling gaps,
-// through a low formant. Length stretches them, Wetness adds the noise and the gurgles, Tone moves the formant.
+// Fart: every pick plays a fart sample at your note (an octave down by default): 25 recordings (resources/farts/,
+// public domain, cut and measured by tools/prepare_fart_samples.py), each with its pitch measured, played faster or
+// slower to land on the note (pitch and length change together, as on a sampler). Random picks one each time from
+// those within half an octave of the note (the nearest three if fewer), so high notes get the squeakers and low
+// notes the rumbles, never the same twice running. Pitch Natural plays them as recorded. Length cuts them short
+// (with a fade), Tone darkens (a low-pass) or thins (a high-pass), Hold Held fades them out when the note ends.
+// Up to three at once; a fourth fades out the oldest.
 extern const BlockDescriptor kFartBlockDescriptor;
 
 enum FartParam {
     kFartParamType,    // choice: Random, then fartTypeName()
-    kFartParamLength,  // %
-    kFartParamWetness, // %
-    kFartParamTone,    // %, 50 = as designed
+    kFartParamLength,  // %, of each sample's length
+    kFartParamTone,    // %, 50 = as recorded
+    kFartParamPitch,   // choice: Follow, Natural
     kFartParamOctave,  // choice: -2, -1, 0, +1
     kFartParamMix,     // %
+    kFartParamHold,    // choice: One Shot, Held
     kFartParamPickFilter, // ms
     kFartParamTrack,   // choice: Block In, Rig In
     kFartParamCount
 };
 
-constexpr int kFartTypes = 13;
+constexpr int kFartTypes = 25;
 const char* fartTypeName(int type);
 
 // Trumpet: a brass voice that brightens as you dig in (a saw through a low-pass that opens with the level, then the

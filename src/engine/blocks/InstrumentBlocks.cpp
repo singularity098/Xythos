@@ -3,6 +3,7 @@
 
 #include "engine/blocks/InstrumentBlocks.hpp"
 
+#include "engine/blocks/FartSamples.hpp"
 #include "engine/blocks/TrackedSynth.hpp"
 #include "engine/dsp/Biquad.hpp"
 #include "engine/dsp/Oscillator.hpp"
@@ -10,7 +11,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <cstring>
 
 namespace xythos {
 
@@ -42,187 +45,324 @@ private:
 // ---------------------------------------------------------------------------------------------------------------------
 // Fart
 
-enum class Bend { Steady, Rise, Fall, Wobble, Quack };
-
-struct FartKind {
+// The samples (resources/farts/; tools/prepare_fart_samples.py prints these rows), lowest to highest: the Type
+// control's choices after Random, in this order (never add or remove one once released). hz: the sample's pitch
+// (YIN's median period, or its strongest spectral peak for a hiss or a splat); gain: so they all play about as loud.
+struct FartSample {
+    const char* id;
     const char* name;
-    float seconds;   // natural length
-    Bend bend;
-    float amount;    // how far the pitch bends (a ratio at the end, or the wobble's depth)
-    float flutterHz; // the level's flutter
-    float flutter;   // its depth
-    float jitter;    // the period's randomness
-    float noise;     // airy noise
-    float formantHz;
-    float sputterHz; // gurgling gaps (0: none)
-    float bright;    // the buzz's width: brighter is a narrower pulse
-    float level;
+    float hz;
+    float gain;
 };
 
-constexpr FartKind kFarts[kFartTypes] = {
-    { "Squeaker", 0.35f, Bend::Rise, 1.5f, 40.0f, 0.3f, 0.05f, 0.05f, 900.0f, 0.0f, 0.8f, 0.8f },
-    { "Tuba", 0.9f, Bend::Fall, 0.9f, 18.0f, 0.5f, 0.1f, 0.1f, 250.0f, 0.0f, 0.4f, 1.0f },
-    { "Rumble", 1.4f, Bend::Fall, 0.8f, 12.0f, 0.7f, 0.2f, 0.25f, 180.0f, 0.0f, 0.2f, 1.0f },
-    { "Wet", 0.6f, Bend::Steady, 1.0f, 25.0f, 0.6f, 0.3f, 0.7f, 400.0f, 8.0f, 0.5f, 0.9f },
-    { "Stutter", 0.8f, Bend::Steady, 1.0f, 20.0f, 0.5f, 0.15f, 0.15f, 350.0f, 6.0f, 0.5f, 0.9f },
-    { "Long Haul", 2.5f, Bend::Wobble, 0.12f, 22.0f, 0.5f, 0.1f, 0.1f, 300.0f, 0.0f, 0.45f, 0.9f },
-    { "Whoopee", 1.2f, Bend::Fall, 0.6f, 30.0f, 0.4f, 0.05f, 0.2f, 500.0f, 0.0f, 0.6f, 0.9f },
-    { "Machine Gun", 1.0f, Bend::Steady, 1.0f, 15.0f, 0.8f, 0.1f, 0.1f, 300.0f, 12.0f, 0.5f, 1.0f },
-    { "Silent", 1.5f, Bend::Steady, 1.0f, 8.0f, 0.2f, 0.5f, 0.95f, 1500.0f, 0.0f, 0.3f, 0.5f },
-    { "Duck", 0.5f, Bend::Quack, 1.25f, 50.0f, 0.3f, 0.05f, 0.1f, 1200.0f, 0.0f, 1.0f, 0.7f },
-    { "Balloon", 1.8f, Bend::Rise, 2.0f, 35.0f, 0.25f, 0.02f, 0.05f, 1000.0f, 0.0f, 0.9f, 0.7f },
-    { "Motorboat", 1.6f, Bend::Steady, 1.0f, 9.0f, 1.0f, 0.1f, 0.2f, 220.0f, 0.0f, 0.35f, 1.0f },
-    { "Bubbles", 0.7f, Bend::Rise, 1.3f, 28.0f, 0.5f, 0.4f, 0.5f, 650.0f, 10.0f, 0.6f, 0.9f },
+constexpr FartSample kFartSamples[kFartTypes] = {
+    { "chop1-06", "Rumble", 62.7f, 0.846f },     // 0.86 s
+    { "chop1-09", "Thunder", 64.3f, 0.904f },    // 1.57 s
+    { "apebble-5", "Tuba", 83.9f, 0.762f },      // 0.87 s
+    { "wet-6139", "Wet One", 88.9f, 0.597f },    // 0.92 s
+    { "proud", "Proud", 108.9f, 0.528f },        // 0.92 s
+    { "chop1-01", "Toot", 137.0f, 1.059f },      // 0.50 s
+    { "wet-long", "Marathon", 138.1f, 1.059f },  // 4.66 s
+    { "chop1-12", "Trombone", 140.0f, 0.854f },  // 1.04 s
+    { "chop2-03", "Long Haul", 140.9f, 0.558f }, // 1.72 s
+    { "chop2-02", "Groaner", 160.7f, 0.633f },   // 1.06 s
+    { "furtz", "Pop", 163.9f, 0.462f },          // 0.22 s
+    { "chop1-07", "Honk", 175.0f, 0.842f },      // 0.55 s
+    { "short-83471", "Blip", 195.8f, 0.610f },   // 0.16 s
+    { "apebble-4", "Squelch", 199.2f, 0.421f },  // 0.57 s, spectral peak
+    { "chop1-02", "Puff", 199.2f, 1.059f },      // 0.25 s, spectral peak
+    { "wet-short", "Squish", 252.7f, 0.809f },   // 0.52 s
+    { "chop2-01", "Whoopee", 254.3f, 0.724f },   // 1.30 s
+    { "apebble-8", "Brass", 257.8f, 0.682f },    // 0.95 s, spectral peak
+    { "chop1-04", "Sputter", 269.5f, 1.059f },   // 0.28 s, spectral peak
+    { "chop1-08", "Splat", 269.5f, 0.710f },     // 0.68 s, spectral peak
+    { "chop1-10", "Raspberry", 269.5f, 1.059f }, // 0.62 s, spectral peak
+    { "chop1-05", "Squeak", 294.5f, 0.643f },    // 0.34 s
+    { "chop1-03", "Pfft", 316.4f, 0.977f },      // 0.36 s, spectral peak
+    { "balloon", "Balloon", 385.5f, 0.689f },    // 7.43 s
+    { "apebble-7", "Mouse", 595.4f, 0.597f },    // 0.38 s
 };
 
-constexpr const char* kFartTypeNames[kFartTypes + 1] = {
-    "Random", "Squeaker", "Tuba", "Rumble", "Wet", "Stutter", "Long Haul", "Whoopee", "Machine Gun", "Silent", "Duck",
-    "Balloon", "Motorboat", "Bubbles",
-};
+constexpr std::array<const char*, kFartTypes + 1> fartTypeNames()
+{
+    std::array<const char*, kFartTypes + 1> names {};
+    names[0] = "Random";
+    for (int i = 0; i < kFartTypes; ++i)
+        names[static_cast<size_t>(i + 1)] = kFartSamples[i].name;
+    return names;
+}
 
-constexpr int kFartVoices = 2;
+constexpr std::array<const char*, kFartTypes + 1> kFartTypeNames = fartTypeNames();
+constexpr const char* kFartPitchNames[] = { "Follow", "Natural" };
+constexpr const char* kFartHoldNames[] = { "One Shot", "Held" };
+
+// The samples' PCM, found in their embedded WAVs once (the first Fart block made, never on the audio thread)
+const std::array<PcmView, kFartTypes>& fartPcm()
+{
+    static const std::array<PcmView, kFartTypes> pcm = [] {
+        std::array<PcmView, kFartTypes> views {};
+        for (int i = 0; i < kFartTypes; ++i)
+        {
+            const EmbeddedFile file = builtinFartSample(kFartSamples[i].id);
+            views[static_cast<size_t>(i)] = pcmFromWav(file.data, file.size);
+        }
+        return views;
+    }();
+    return pcm;
+}
+
+// up to this many farts at once (a new one fades out the oldest), and a slot or two for those fading out
+constexpr int kFartSounding = 3;
+constexpr int kFartVoices = 5;
+// how far Random will shift a sample to reach your note, in semitones (if fewer than kFartNearest samples are that
+// close, the nearest ones)
+constexpr float kFartRandomRange = 6.0f;
+constexpr int kFartNearest = 3;
+// the furthest a sample is played from its own pitch: a ratio of 1/8 to 4
+constexpr double kFartMinRatio = 0.125, kFartMaxRatio = 4.0;
+// the samples' level (each about -16 dBFS RMS by its gain) to the block's: a little over a DI guitar's, with room for
+// three at once
+constexpr float kFartLevel = 0.6f;
 
 class FartBlock : public TrackedSynth {
 public:
+    FartBlock() : fPcm(fartPcm()), fRandom(0xfa47u + 0x9e3779b9u * fInstances.fetch_add(1)) {}
+
     void setParam(int index, float value) override
     {
         switch (index)
         {
         case kFartParamType:       fType = std::clamp(static_cast<int>(value), 0, kFartTypes); break;
-        case kFartParamLength:     fLength = value / 100.0f; break;
-        case kFartParamWetness:    fWetness = value / 100.0f; break;
-        case kFartParamTone:       fTone = std::exp2((value - 50.0f) / 50.0f); break;
+        case kFartParamLength:     fLength = std::clamp(value / 100.0f, 0.05f, 1.0f); break;
+        case kFartParamTone:       fToneValue = value; updateTone(); break;
+        case kFartParamPitch:      fNatural = value >= 0.5f; break;
         case kFartParamOctave:     setOctave(value); break;
         case kFartParamMix:        setMix(value); break;
+        case kFartParamHold:       fHeld = value >= 0.5f; break;
         case kFartParamPickFilter: setPickFilter(value); break;
         case kFartParamTrack:      setTrack(value); break;
         }
     }
 
 protected:
+    void prepareVoice() override { updateTone(); }
+
     void resetVoice() override
     {
         for (Voice& voice : fVoices)
             voice.active = false;
         fLast = -1;
+        fTone.reset();
+        fWasOn = false;
     }
 
     void render(const Note& note, float& left, float& right) override
     {
         if (note.onset)
             trigger(note);
+        else if (fHeld && fWasOn && !note.on)
+            for (Voice& voice : fVoices)
+                if (voice.active)
+                    voice.fadeStep = std::max(voice.fadeStep, static_cast<float>(1.0 / (0.06 * fSampleRate)));
+        fWasOn = note.on;
         float sum = 0.0f;
         for (Voice& voice : fVoices)
             if (voice.active)
                 sum += renderVoice(voice, note);
+        if (fToneMode != 0)
+        {
+            const Svf::Out out = fTone.process(sum);
+            sum = fToneMode < 0 ? out.low : out.high;
+        }
         left = right = sum;
     }
 
 private:
     struct Voice {
         bool active = false;
-        const FartKind* kind = &kFarts[0];
-        double hz = 100.0;
-        double phase = 0.0, flutterPhase = 0.0, sputterPhase = 0.0;
-        float time = 0.0f, length = 1.0f;
+        int sample = 0;
+        double pos = 0.0, step = 1.0;
+        double end = 0.0;       // where it stops (Length), in the sample's frames
+        double fadeFrom = 0.0;  // where its fade-out to `end` starts
+        float gain = 1.0f;
         float velocity = 0.0f;
-        float jitter = 0.0f, jitterTarget = 0.0f;
-        float wet = 0.0f;
-        Svf formant, body, air;
+        float time = 0.0f;      // seconds since it started
+        float fade = 1.0f, fadeStep = 0.0f; // a fade-out (stolen, or let go of while Held)
     };
+
+    // The sample to play for this note: the chosen one, or Random's pick (one near the note when following it, never
+    // the last one if there's another)
+    int pickSample(double hz)
+    {
+        if (fType > 0)
+            return fType - 1;
+        std::array<int, kFartTypes> candidates {};
+        int count = 0;
+        if (fNatural || !(hz > 0.0))
+        {
+            for (int i = 0; i < kFartTypes; ++i)
+                candidates[static_cast<size_t>(count++)] = i;
+        }
+        else
+        {
+            std::array<float, kFartTypes> distance {};
+            for (int i = 0; i < kFartTypes; ++i)
+                distance[static_cast<size_t>(i)] =
+                    std::abs(12.0f * std::log2(static_cast<float>(hz) / kFartSamples[i].hz));
+            for (int i = 0; i < kFartTypes; ++i)
+                if (distance[static_cast<size_t>(i)] <= kFartRandomRange)
+                    candidates[static_cast<size_t>(count++)] = i;
+            if (count < kFartNearest)
+            {
+                // the nearest few (a note far below or above them all)
+                count = 0;
+                std::array<bool, kFartTypes> taken {};
+                for (int n = 0; n < kFartNearest; ++n)
+                {
+                    int best = -1;
+                    for (int i = 0; i < kFartTypes; ++i)
+                        if (!taken[static_cast<size_t>(i)] &&
+                            (best < 0 || distance[static_cast<size_t>(i)] < distance[static_cast<size_t>(best)]))
+                            best = i;
+                    taken[static_cast<size_t>(best)] = true;
+                    candidates[static_cast<size_t>(count++)] = best;
+                }
+            }
+        }
+        if (count > 1)
+        {
+            // drop the last one played
+            for (int c = 0; c < count; ++c)
+                if (candidates[static_cast<size_t>(c)] == fLast)
+                {
+                    candidates[static_cast<size_t>(c)] = candidates[static_cast<size_t>(count - 1)];
+                    --count;
+                    break;
+                }
+        }
+        const int c = std::min(count - 1, static_cast<int>(fRandom.uniform() * static_cast<float>(count)));
+        return candidates[static_cast<size_t>(c)];
+    }
 
     void trigger(const Note& note)
     {
-        // a new one takes a free voice, or the older one
-        Voice* voice = &fVoices[0];
+        // too many sounding: the oldest fades out quickly
+        int sounding = 0;
+        Voice* oldest = nullptr;
         for (Voice& v : fVoices)
-            if (!v.active || v.time > voice->time)
+            if (v.active && v.fadeStep == 0.0f)
+            {
+                ++sounding;
+                if (!oldest || v.time > oldest->time)
+                    oldest = &v;
+            }
+        if (sounding >= kFartSounding && oldest)
+            oldest->fadeStep = static_cast<float>(1.0 / (0.005 * fSampleRate));
+        Voice* voice = nullptr;
+        for (Voice& v : fVoices)
+            if (!v.active)
+            {
                 voice = &v;
-        int kind = fType - 1;
-        if (fType == 0)
+                break;
+            }
+        if (!voice)
         {
-            // Random: any kind but the last one
-            kind = static_cast<int>(fRandom.uniform() * (kFartTypes - 1));
-            if (kind >= fLast && fLast >= 0)
-                ++kind;
-            kind = std::clamp(kind, 0, kFartTypes - 1);
+            // every slot busy (picks faster than the fades): the one furthest into its fade
+            voice = &fVoices[0];
+            for (Voice& v : fVoices)
+                if (v.fade < voice->fade)
+                    voice = &v;
         }
-        fLast = kind;
+
+        const int sample = pickSample(note.target);
+        fLast = sample;
+        const PcmView& pcm = fPcm[static_cast<size_t>(sample)];
+        if (pcm.frames < 4 || pcm.sampleRate == 0)
+        {
+            voice->active = false;
+            return;
+        }
+        const double ratio = fNatural || !(note.target > 0.0)
+                                 ? 1.0
+                                 : std::clamp(note.target / kFartSamples[sample].hz, kFartMinRatio, kFartMaxRatio);
         voice->active = true;
-        voice->kind = &kFarts[kind];
-        voice->hz = note.target;
-        voice->phase = 0.0;
-        voice->flutterPhase = fRandom.uniform();
-        voice->sputterPhase = 0.25;
-        voice->time = 0.0f;
-        voice->length = std::max(0.08f, voice->kind->seconds * (0.25f + 1.75f * fLength));
+        voice->sample = sample;
+        voice->pos = 0.0;
+        voice->step = ratio * pcm.sampleRate / fSampleRate;
+        voice->end = static_cast<double>(pcm.frames - 1) * fLength;
+        // fade out over its last 30 ms (as heard) when Length cuts it short; the whole sample has its own fade
+        const double fade = fLength < 1.0f ? std::min(0.5 * voice->end, 0.03 * fSampleRate * voice->step) : 0.0;
+        voice->fadeFrom = voice->end - fade;
+        voice->gain = kFartSamples[sample].gain * kFartLevel;
         voice->velocity = 0.0f;
-        voice->jitter = voice->jitterTarget = 0.0f;
-        voice->wet = std::min(1.0f, voice->kind->noise * (0.5f + fWetness));
-        const double formant = std::min(0.4 * fSampleRate, static_cast<double>(voice->kind->formantHz * fTone));
-        voice->formant.set(fSampleRate, formant, 2.0);
-        voice->body.set(fSampleRate, std::min(0.4 * fSampleRate, 2.0 * formant), 0.7);
-        voice->air.set(fSampleRate, std::min(0.4 * fSampleRate, 3.0 * formant), 0.8);
-        voice->formant.reset();
-        voice->body.reset();
-        voice->air.reset();
+        voice->time = 0.0f;
+        voice->fade = 1.0f;
+        voice->fadeStep = 0.0f;
     }
 
     float renderVoice(Voice& v, const Note& note)
     {
-        const FartKind& k = *v.kind;
-        const auto dt = static_cast<float>(1.0 / fSampleRate);
-        v.time += dt;
-        const float u = v.time / v.length;
-        if (u >= 1.0f)
+        const PcmView& pcm = fPcm[static_cast<size_t>(v.sample)];
+        if (v.pos >= v.end || v.fade <= 0.0f)
         {
             v.active = false;
             return 0.0f;
         }
         // as loud as the pick (its level over the first few ms)
+        v.time += static_cast<float>(1.0 / fSampleRate);
         if (v.time < 0.015f)
             v.velocity = std::max(v.velocity, std::min(1.0f, note.envelope * 5.0f));
-        const float env = std::min(1.0f, v.time / 0.015f) * (u < 0.75f ? 1.0f : (1.0f - u) / 0.25f);
 
-        float bend = 1.0f;
-        switch (k.bend)
-        {
-        case Bend::Rise:
-        case Bend::Fall:   bend = 1.0f + (k.amount - 1.0f) * u; break;
-        case Bend::Wobble: bend = 1.0f + k.amount * std::sin(kTwoPi * 3.0f * v.time); break;
-        case Bend::Quack:  bend = u < 0.3f ? 1.0f + (k.amount - 1.0f) * u / 0.3f : k.amount - 0.35f * (u - 0.3f); break;
-        case Bend::Steady: break;
-        }
-        // the period wanders: a new random target each cycle
-        v.jitter += (v.jitterTarget - v.jitter) * 0.01f;
-        const double hz = std::clamp(v.hz * bend * (1.0 + k.jitter * v.jitter), 20.0, 0.3 * fSampleRate);
-        const double step = hz / fSampleRate;
-        if (advancePhase(v.phase, step))
-            v.jitterTarget = fRandom.next();
-        const float width = 0.5f - 0.4f * k.bright;
-        const float buzz = blepPulse(v.phase, step, width);
+        // cubic Hermite between the samples around pos
+        const auto i = static_cast<int64_t>(v.pos);
+        const auto t = static_cast<float>(v.pos - static_cast<double>(i));
+        auto at = [&](int64_t k) {
+            return k < 0 || k >= static_cast<int64_t>(pcm.frames) ? 0.0f : pcmSample(pcm, static_cast<uint32_t>(k));
+        };
+        const float y0 = at(i - 1), y1 = at(i), y2 = at(i + 1), y3 = at(i + 2);
+        const float c1 = 0.5f * (y2 - y0);
+        const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        const float y = ((c3 * t + c2) * t + c1) * t + y1;
 
-        v.flutterPhase += k.flutterHz / fSampleRate;
-        v.flutterPhase -= std::floor(v.flutterPhase);
-        const float flutter = 1.0f - k.flutter * 0.5f * (1.0f + std::sin(kTwoPi * static_cast<float>(v.flutterPhase)));
-        float sputter = 1.0f;
-        if (k.sputterHz > 0.0f)
-        {
-            v.sputterPhase += k.sputterHz * (0.6 + 0.8 * fWetness) / fSampleRate;
-            v.sputterPhase -= std::floor(v.sputterPhase);
-            const float s = std::sin(kTwoPi * static_cast<float>(v.sputterPhase));
-            sputter = std::clamp(2.0f * (s + 0.3f), 0.0f, 1.0f);
-        }
-        const float air = v.air.process(fRandom.next()).band * v.wet * 3.0f;
-        const float source = buzz * (1.0f - v.wet) + air;
-        const float shaped = 1.4f * v.formant.process(source).band + 0.5f * v.body.process(source).low;
-        return std::tanh(shaped * 1.5f) * 0.45f * env * flutter * sputter * v.velocity * k.level;
+        float env = v.fade;
+        if (v.pos > v.fadeFrom && v.end > v.fadeFrom)
+            env *= static_cast<float>((v.end - v.pos) / (v.end - v.fadeFrom));
+        if (v.fadeStep > 0.0f)
+            v.fade -= v.fadeStep;
+        v.pos += v.step;
+        return y * v.gain * v.velocity * env;
     }
 
+    // Tone: 50% leaves the samples as they are; below, a low-pass closes down to 250 Hz; above, a high-pass opens up
+    // to 800 Hz
+    void updateTone()
+    {
+        const float u = (fToneValue - 50.0f) / 50.0f;
+        if (std::abs(u) < 0.01f)
+        {
+            fToneMode = 0;
+            return;
+        }
+        const int mode = u < 0.0f ? -1 : 1;
+        if (mode != fToneMode)
+            fTone.reset();
+        fToneMode = mode;
+        const double hz = u < 0.0f ? 16000.0 * std::exp2(6.0 * u) : 20.0 * std::exp2(5.3 * u);
+        fTone.set(fSampleRate, std::min(hz, 0.45 * fSampleRate), 0.707);
+    }
+
+    static inline std::atomic<uint32_t> fInstances { 0 };
+
+    const std::array<PcmView, kFartTypes>& fPcm;
     int fType = 0;
-    float fLength = 0.43f, fWetness = 0.5f, fTone = 1.0f;
+    float fLength = 1.0f;
+    float fToneValue = 50.0f;
+    int fToneMode = 0; // -1: low-pass, 0: none, 1: high-pass
+    Svf fTone;
+    bool fNatural = false, fHeld = false, fWasOn = false;
     std::array<Voice, kFartVoices> fVoices;
-    Noise fRandom { 0xfa47u };
+    Noise fRandom;
     int fLast = -1;
 };
 
@@ -659,9 +799,39 @@ private:
 
 } // namespace
 
+PcmView pcmFromWav(const unsigned char* data, size_t size)
+{
+    auto u16 = [&](size_t at) { return static_cast<uint32_t>(data[at] | (data[at + 1] << 8)); };
+    auto u32 = [&](size_t at) { return u16(at) | (u16(at + 2) << 16); };
+    if (!data || size < 12 || std::memcmp(data, "RIFF", 4) != 0 || std::memcmp(data + 8, "WAVE", 4) != 0)
+        return {};
+    bool pcm16Mono = false;
+    uint32_t rate = 0;
+    for (size_t at = 12; at + 8 <= size;)
+    {
+        const uint32_t chunk = u32(at + 4);
+        const size_t body = at + 8;
+        if (chunk > size - body)
+            return {};
+        if (std::memcmp(data + at, "fmt ", 4) == 0 && chunk >= 16)
+        {
+            pcm16Mono = u16(body) == 1 && u16(body + 2) == 1 && u16(body + 14) == 16;
+            rate = u32(body + 4);
+        }
+        else if (std::memcmp(data + at, "data", 4) == 0)
+        {
+            if (!pcm16Mono || rate == 0)
+                return {};
+            return { data + body, chunk / 2, rate };
+        }
+        at = body + chunk + (chunk & 1);
+    }
+    return {};
+}
+
 const char* fartTypeName(int type)
 {
-    return kFarts[std::clamp(type, 0, kFartTypes - 1)].name;
+    return kFartSamples[std::clamp(type, 0, kFartTypes - 1)].name;
 }
 
 const BlockDescriptor kFartBlockDescriptor = {
@@ -670,12 +840,13 @@ const BlockDescriptor kFartBlockDescriptor = {
     Category::Synth,
     kFartParamCount,
     {
-        ParamSpec { "Type", "", 0.0f, static_cast<float>(kFartTypes), 0.0f, ParamScale::Choice, kFartTypeNames },
-        ParamSpec { "Length", "%", 0.0f, 100.0f, 43.0f, ParamScale::Linear },
-        ParamSpec { "Wetness", "%", 0.0f, 100.0f, 50.0f, ParamScale::Linear },
+        ParamSpec { "Type", "", 0.0f, static_cast<float>(kFartTypes), 0.0f, ParamScale::Choice, kFartTypeNames.data() },
+        ParamSpec { "Length", "%", 5.0f, 100.0f, 100.0f, ParamScale::Linear },
         ParamSpec { "Tone", "%", 0.0f, 100.0f, 50.0f, ParamScale::Linear },
+        ParamSpec { "Pitch", "", 0.0f, 1.0f, 0.0f, ParamScale::Choice, kFartPitchNames },
         ParamSpec { "Octave", "", 0.0f, 3.0f, 1.0f, ParamScale::Choice, kOctaveNames },
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
+        ParamSpec { "Hold", "", 0.0f, 1.0f, 0.0f, ParamScale::Choice, kFartHoldNames },
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
