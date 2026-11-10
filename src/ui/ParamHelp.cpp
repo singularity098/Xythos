@@ -1065,7 +1065,6 @@ constexpr BlockHelp kBlockHelp[] = {
     { "synth", "Track", TRACK_HELP },
     { "octave", "Track", TRACK_HELP },
     { "harmonizer", "Track", TRACK_HELP },
-    { "polychip", "Track", TRACK_HELP },
 
     // Filter
     { "filter", "Type",
@@ -1616,36 +1615,6 @@ constexpr BlockHelp kBlockHelp[] = {
     { "chipsynth", "Pick Filter", SYNTH_PICK_FILTER_HELP },
     { "chipsynth", "Track", TRACK_HELP },
 
-    // Poly Chip
-    { "polychip", "Wave",
-      "The console's waveforms: thin, nasal pulses at 12% and 25%, a hollow 50% square, or the stepped, "
-      "flute-like triangle used for basses." },
-    { "polychip", "Voices",
-      "How many notes can sound at once. 3 or 4 suit most chords; 1 plays only the loudest note, like the mono "
-      "Chip Synth. Old consoles had 2 or 3." },
-    { "polychip", "Focus",
-      "How hard it ignores the overtones of your notes. A guitar string also rings at an octave, an octave and a "
-      "fifth and so on above its note, and those can turn into extra synth notes. Raise Focus if you hear notes you "
-      "didn't play; lower it if chord notes an octave or a fifth above another go missing." },
-    { "polychip", "Arp",
-      "Plays the notes of your chord one after another instead of together, the way game music does it: Up from the "
-      "lowest note, Down from the highest. Off plays the whole chord." },
-    { "polychip", "Arp Rate",
-      "How fast the arpeggio steps through your chord, in notes per second. Fast rates blur into a shimmering chord; "
-      "slower ones sound like separate notes." },
-    { "polychip", "Release", SYNTH_RELEASE_HELP },
-    { "polychip", "Crush",
-      "The console's coarse volume and sample steps. Turn it up for a grittier, more lo-fi 8-bit sound; 0% is "
-      "clean." },
-    { "polychip", "Octave", SYNTH_OCTAVE_HELP },
-    { "polychip", "Mix", SYNTH_MIX_HELP },
-    { "polychip", "Quantize",
-      "Snaps every note to the nearest semitone, as a game console plays them, so bends jump in steps. Turn it off "
-      "to follow your bends, slides and vibrato smoothly at the pitch you play." },
-    { "polychip", "Pick Filter",
-      "Keeps the click of your pick from turning into short, squeaky high notes. A new note has to last this long "
-      "before it sounds. Raise it if you hear chirps at the start of notes; lower it for a faster response. Around "
-      "10-20 ms suits most playing; 0 is off." },
     // Fourth set of synths
     // Theremin
     { "theremin", "Glide",
@@ -2439,10 +2408,6 @@ constexpr TypeHelp kTypeHelp[] = {
       "An 8-bit game console synth: thin pulse waves or a stepped triangle, notes snapped to semitones, fast "
       "arpeggios that fake chords, and a delayed vibrato, for chiptune leads and basses. Play single notes; put it "
       "first in the chain." },
-    { "polychip",
-      "A polyphonic 8-bit synth: it hears every note you play, chords included, and plays each one as a pulse or "
-      "triangle voice snapped to the semitone, or arpeggiates the chord. Single notes speak as fast as in the mono "
-      "synths; a chord's notes take a moment longer, the low ones last. Play cleanly and put it first in the chain." },
     { "theremin",
       "A theremin: a pure, singing tone that glides along your pitch without starting each note afresh, so slides, "
       "bends and vibrato become eerie theremin swoops, with an old instrument's wobble. Play slow single-note "

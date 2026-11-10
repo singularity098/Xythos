@@ -284,11 +284,21 @@ public:
         for (uint32_t i = 0; i < frames; ++i)
         {
             const NoteTracker::Note& note = fInput.process(io, numChannels, i);
+            if (fInput.poly() && fInput.frameReady())
+                fChordError = chordError(fInput.frame());
             if (note.on)
             {
-                const double played = hzToMidi(note.hz);
-                const double target = nearestNote(played);
-                fCorrection += ((target - played) * fAmount - fCorrection) * fSpeedCoef;
+                double error;
+                if (fInput.poly())
+                {
+                    error = fChordError;
+                }
+                else
+                {
+                    const double played = hzToMidi(note.hz);
+                    error = nearestNote(played) - played;
+                }
+                fCorrection += (error * fAmount - fCorrection) * fSpeedCoef;
             }
             else
             {
@@ -316,7 +326,29 @@ public:
             fVoices[ch].reset(fWindowMs / 1000.0f * static_cast<float>(fSampleRate));
         }
         fCorrection = 0.0;
+        fChordError = 0.0;
         fSnap = true;
+    }
+
+    // Poly: one shift for the whole chord (a pitch shifter moves every note together): how far its notes are from
+    // the nearest notes of the key and scale, on average, the louder notes counting more
+    double chordError(const TrackedInput::Frame& f) const
+    {
+        double sum = 0.0, weights = 0.0;
+        for (int b = 0; b < TrackedInput::kBands; ++b)
+        {
+            const auto k = static_cast<size_t>(b);
+            if (!f.sounding[k])
+                continue;
+            const double hz = fInput.bandHz(b);
+            if (hz <= 0.0)
+                continue;
+            const double played = hzToMidi(hz);
+            const double weight = f.level[k];
+            sum += (nearestNote(played) - played) * weight;
+            weights += weight;
+        }
+        return weights > 0.0 ? sum / weights : 0.0;
     }
 
     // The nearest note of the key and scale to a played pitch (MIDI, fractional)
@@ -350,6 +382,7 @@ private:
     float fSpeedMs = 10.0f, fAmount = 1.0f, fWindowMs = 25.0f;
     double fSpeedCoef = 1.0, fReturn = 0.001;
     double fCorrection = 0.0;
+    double fChordError = 0.0;
     Smoother fMix;
     DelayLine fLines[2];
     PitchVoice fVoices[2];
@@ -620,6 +653,9 @@ const BlockDescriptor kStrumBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kHardTuneBlockDescriptor = {
@@ -644,6 +680,9 @@ const BlockDescriptor kHardTuneBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kDrumTriggerBlockDescriptor = {

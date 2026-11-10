@@ -11,7 +11,8 @@ namespace xythos {
 // up to four pitch-shifted copies of it come in one after another, Strum ms apart, like a hand sweeping across the
 // strings: low to high (Down), high to low (Up), or alternating. Chord picks the notes over the played one:
 // Diatonic builds them from Key and Scale, so every note gets the chord that belongs to it; the others are fixed
-// shapes. Track and Lookahead as in the synths (blocks/TrackedInput.hpp).
+// shapes. Track and Lookahead as in the synths (blocks/TrackedInput.hpp); in Poly the shape goes on the chord's
+// lowest note, strummed when any of its notes starts.
 extern const BlockDescriptor kStrumBlockDescriptor;
 
 enum StrumParam {
@@ -33,7 +34,8 @@ int strumChordNote(int chord, int key, int scale, int playedMidi, int index); //
 // Hard Tune: pitch correction for guitar. The played note is followed and pulled to the nearest note of Key and
 // Scale: Speed 0 snaps at once (the robotic sound), longer speeds glide like a gentle correction; Amount pulls part
 // way. The correction is a pitch shift of the input (pitch-synchronous window). Track and Lookahead as in the
-// synths.
+// synths. In Poly tracking the whole chord is shifted by its notes' average distance from the scale (louder notes
+// count more), since one shift moves every note.
 extern const BlockDescriptor kHardTuneBlockDescriptor;
 
 enum HardTuneParam {

@@ -9,7 +9,7 @@ namespace xythos {
 
 // The fourth set of synths (owner, 2026-11-08): mono, like those in SynthBlocks.hpp. Each follows the played note
 // (dsp/NoteTracker.hpp, through TrackedSynth), with a Pick Filter and Track as its last two controls and the
-// "lookahead" config (ms, 0 by default; blocks/TrackedInput.hpp).
+// "lookahead" config (ms, 0 by default; blocks/TrackedInput.hpp), and Poly tracking ("poly", blocks/TrackedSynth.hpp).
 
 // Theremin: a sine that glides along your pitch without a new note on each pick, so bends, slides and vibrato become
 // swoops; Wobble is the old instrument's drift in pitch and level, Timbre warms the sine towards a reedy voice.

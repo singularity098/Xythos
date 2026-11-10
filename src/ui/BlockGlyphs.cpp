@@ -659,18 +659,6 @@ const std::map<std::string, Draw>& drawings()
                           { 54, 120 }, { 54, 106 }, { 40, 106 }, { 40, 90 }, { 54, 90 } },
                         true);
          } },
-        { "polychip", [](Builder& b) { // a pixel heart
-             static constexpr std::pair<int, int> outline[] = {
-                 { 1, 0 }, { 3, 0 }, { 3, 1 }, { 4, 1 }, { 4, 0 }, { 6, 0 }, { 6, 1 }, { 7, 1 }, { 7, 3 },
-                 { 6, 3 }, { 6, 4 }, { 5, 4 }, { 5, 5 }, { 4, 5 }, { 4, 6 }, { 3, 6 }, { 3, 5 }, { 2, 5 },
-                 { 2, 4 }, { 1, 4 }, { 1, 3 }, { 0, 3 }, { 0, 1 }, { 1, 1 }, { 1, 0 },
-             };
-             constexpr float unit = 7.5f, x0 = 62.0f - 3.5f * unit, y0 = 76.0f;
-             b.move(x0 + outline[0].first * unit, y0 + outline[0].second * unit);
-             for (const auto& [col, row] : outline)
-                 b.line(x0 + col * unit, y0 + row * unit);
-         } },
-
         { "theremin", [](Builder& b) { // the cabinet, its pitch rod and its volume loop
              b.rect(30, 108, 94, 122);
              b.polyline({ { 84, 108 }, { 84, 66 } });

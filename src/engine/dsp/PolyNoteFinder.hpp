@@ -16,7 +16,8 @@
 
 namespace xythos {
 
-// Finds the notes of chords (the Poly Chip and the MIDI Out's Poly mode), A0..E6: a 5-string bass in drop A up to
+// Finds the notes of chords (the pitch-following pedals' Poly tracking, blocks/TrackedInput.hpp, and the MIDI Out's
+// Poly mode), A0..E6: a 5-string bass in drop A up to
 // the top of a 24-fret guitar. Rewritten on 2026-11-09 around the owner's DI recordings of a 7-string guitar and a
 // 5-string bass (tests/recordings); the semitone filter bank before it could not tell a note's harmonics from notes
 // (on those recordings: 401 s of notes nobody played in 842 s of note time, 328 s of it harmonics of single notes).
@@ -134,7 +135,7 @@ public:
     uint32_t latency() const { return static_cast<uint32_t>(fDelayHops * fHop); }
     void setPickFilter(float ms) { fPickMs = ms; }
     // How far over its fundamental a chord note's harmonic can be and still be its harmonic, not a note there: Focus
-    // x 1.3 (3 at the Poly Chip's default, 70%)
+    // x 1.3 (3 by default: the old Poly Chip's 70%)
     void setFocus(float ratio) { fPrior = std::clamp(1.3f * ratio, 0.15f, 10.5f); }
     void setVoices(int voices) { fVoices = std::clamp(voices, 1, kMaxVoices); }
 

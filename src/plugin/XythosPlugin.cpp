@@ -295,18 +295,37 @@ private:
         }
         fEngine.setParallelProcessing(parallel);
         std::string error;
-        const std::optional<ChainState> chain = ChainState::fromJson(json, &error);
+        std::optional<ChainState> chain = ChainState::fromJson(json, &error);
+        // a project's Poly Chips (removed) are Chip Synths in Poly now: the host gets their controls
+        std::string converted;
+        if (chain)
+        {
+            const std::vector<int> slots = retirePolyChips(*chain);
+            for (const BlockState& block : chain->blocks)
+            {
+                if (std::find(slots.begin(), slots.end(), block.slot) == slots.end())
+                    continue;
+                for (int p = 0; p < kParamsPerSlot; ++p)
+                    setLoadedValue(slotParam(block.slot, p), block.params[static_cast<size_t>(p)]);
+            }
+            if (!slots.empty())
+            {
+                converted = chain->toJson();
+                fNotifyPending.store(true, std::memory_order_release);
+            }
+        }
         if (!chain || !fEngine.setChain(*chain, &error))
         {
             d_stderr2("Xythos: ignoring invalid chain state: %s", error.c_str());
             return;
         }
+        const std::string kept = converted.empty() ? std::string(json) : converted;
         {
             const std::lock_guard<std::mutex> lock(fChainMutex);
-            fChainJson = json;
+            fChainJson = kept;
             fParallel = parallel;
         }
-        writeChainExchange(fInstanceId, json);
+        writeChainExchange(fInstanceId, kept);
     }
 
     // Non-RT. The chain with the footswitches latched now, which only the blocks know (Block::latched()), so a
@@ -385,6 +404,8 @@ private:
             }
             return std::string();
         }, &error);
+        if (loaded)
+            retirePolyChips(loaded->preset.chain);
         if (!loaded || !loaded->preset.chain.validate(BlockRegistry::builtin(), &error))
         {
             d_stderr2("Xythos: couldn't load the preset for program %d: %s", program, error.c_str());

@@ -12,7 +12,8 @@ namespace xythos {
 // dsp/NoteTracker.hpp: a new note is found about 12 ms after the pick (low notes later); play single notes (chords
 // confuse it, as with any guitar synth). The Pick Filter keeps the pick attack's unsteady pitch from sounding; Track
 // picks the block's input or the rig's. Waves: square, saw, pulse, and sub (saw plus a square an octave down).
-// Config: "lookahead" (ms, 0 by default; blocks/TrackedInput.hpp), which adds that much latency.
+// Config: "lookahead" (ms, 0 by default; blocks/TrackedInput.hpp), which adds that much latency, and "poly"
+// (Tracking: Mono, the default, or Poly, every note of a chord with its own voice; blocks/TrackedSynth.hpp).
 extern const BlockDescriptor kSynthBlockDescriptor;
 
 enum SynthParam {

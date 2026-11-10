@@ -182,7 +182,6 @@ add_library(xythos-engine STATIC
   src/engine/blocks/PhaserBlock.cpp
   src/engine/blocks/PitchBlocks.cpp
   src/engine/blocks/PlayedBlocks.cpp
-  src/engine/blocks/PolyChipBlock.cpp
   src/engine/blocks/ResonatorBlocks.cpp
   src/engine/blocks/ReverbBlock.cpp
   src/engine/blocks/RhythmBlocks.cpp

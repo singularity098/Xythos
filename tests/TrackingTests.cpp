@@ -426,30 +426,36 @@ TEST_CASE("pitch-following blocks: lookahead delays the dry signal by the latenc
             continue;
         ++count;
         CAPTURE(std::string(type->typeId));
-        auto block = testing::createWithDefaults(*type, guitar::kRate);
-        CHECK(block->latency() == 0);
-        REQUIRE(block->configure({ { "lookahead", 15.0 } }));
-        // 720 samples (the poly chip works in whole hops of 5.3 ms)
-        CHECK(std::abs(static_cast<int>(block->latency()) - 720) <= 128);
-        for (int p = 0; p < type->numParams; ++p)
-            block->setParam(p, type->params[static_cast<size_t>(p)].def);
-        dryOnly(*type, *block);
+        for (const bool poly : { false, true })
+        {
+            if (poly && !type->poly)
+                continue;
+            CAPTURE(poly);
+            auto block = testing::createWithDefaults(*type, guitar::kRate);
+            CHECK(block->latency() == 0);
+            REQUIRE(block->configure({ { "lookahead", 15.0 }, { "poly", poly } }));
+            // 720 samples (Poly works in whole hops of 5.3 ms)
+            CHECK(std::abs(static_cast<int>(block->latency()) - 720) <= 128);
+            for (int p = 0; p < type->numParams; ++p)
+                block->setParam(p, type->params[static_cast<size_t>(p)].def);
+            dryOnly(*type, *block);
 
-        const guitar::Performance p = guitar::perform(guitar::singleNotes(), 1.0);
-        std::vector<std::vector<float>> x = { p.signal, p.signal };
-        int allocations = 0;
-        testing::runBlock(*block, x, 128, &allocations);
-        CHECK(allocations == 0);
-        const size_t latency = block->latency();
-        double error = 0.0;
-        for (size_t t = 24000; t < x[0].size(); ++t)
-            error = std::max(error, static_cast<double>(std::fabs(x[0][t] - p.signal[t - latency])));
-        CHECK(error < 1e-3);
+            const guitar::Performance p = guitar::perform(guitar::singleNotes(), 1.0);
+            std::vector<std::vector<float>> x = { p.signal, p.signal };
+            int allocations = 0;
+            testing::runBlock(*block, x, 128, &allocations);
+            CHECK(allocations == 0);
+            const size_t latency = block->latency();
+            double error = 0.0;
+            for (size_t t = 24000; t < x[0].size(); ++t)
+                error = std::max(error, static_cast<double>(std::fabs(x[0][t] - p.signal[t - latency])));
+            CHECK(error < 1e-3);
 
-        REQUIRE(block->configure({ { "lookahead", 0.0 } }));
-        CHECK(block->latency() == 0);
+            REQUIRE(block->configure({ { "lookahead", 0.0 }, { "poly", poly } }));
+            CHECK(block->latency() == 0);
+        }
     }
-    CHECK(count == 25);
+    CHECK(count == 24); // (25 with the Poly Chip, removed on 2026-11-10)
 }
 
 TEST_CASE("with lookahead, a synth's notes start with the pick")

@@ -32,7 +32,6 @@
 #include "engine/blocks/PhaserBlock.hpp"
 #include "engine/blocks/PitchBlocks.hpp"
 #include "engine/blocks/PlayedBlocks.hpp"
-#include "engine/blocks/PolyChipBlock.hpp"
 #include "engine/blocks/ResonatorBlocks.hpp"
 #include "engine/blocks/ReverbBlock.hpp"
 #include "engine/blocks/RhythmBlocks.hpp"
@@ -166,7 +165,6 @@ const BlockRegistry& BlockRegistry::builtin()
         &kAcidSynthBlockDescriptor,
         &kStringSynthBlockDescriptor,
         &kChipSynthBlockDescriptor,
-        &kPolyChipBlockDescriptor,
         &kThereminBlockDescriptor,
         &kSyncLeadBlockDescriptor,
         &kPdSynthBlockDescriptor,

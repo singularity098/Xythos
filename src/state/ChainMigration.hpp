@@ -46,4 +46,14 @@ using LooperSettings = std::array<float, kLooperParamCount>;
 // or Latency existed gets Free mode and the default latency, as the DSP ran it)
 std::optional<LooperSettings> retireLoopers(ChainState& chain);
 
+// The Poly Chip block was removed on 2026-11-10 (owner: every pedal that follows notes has a Poly mode instead). Its
+// blocks become Chip Synths with Poly tracking (config "poly"), keeping its Wave, Quantize, Crush, Octave, Mix, Pick
+// Filter and Track (the same ranges, so the same normalized values), the Arp off and no vibrato (it had none); Voices,
+// Focus and Release go, and so do MIDI mappings to them. Mappings to the others follow them. Returns the slots
+// changed, whose host parameters the caller must set from the block's params.
+std::vector<int> retirePolyChips(ChainState& chain);
+
+// The removed Poly Chip's typeId
+inline constexpr const char* kRetiredPolyChipType = "polychip";
+
 } // namespace xythos

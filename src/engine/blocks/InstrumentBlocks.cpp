@@ -679,7 +679,7 @@ const BlockDescriptor kFartBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new FartBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<FartBlock>()); },
     -1,
     -1,
     false,
@@ -687,6 +687,9 @@ const BlockDescriptor kFartBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kTrumpetBlockDescriptor = {
@@ -708,7 +711,7 @@ const BlockDescriptor kTrumpetBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new TrumpetBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<TrumpetBlock>()); },
     -1,
     -1,
     false,
@@ -716,6 +719,9 @@ const BlockDescriptor kTrumpetBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kViolinBlockDescriptor = {
@@ -737,7 +743,7 @@ const BlockDescriptor kViolinBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new ViolinBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<ViolinBlock>()); },
     -1,
     -1,
     false,
@@ -745,6 +751,9 @@ const BlockDescriptor kViolinBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kPianoBlockDescriptor = {
@@ -764,7 +773,7 @@ const BlockDescriptor kPianoBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new PianoBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<PianoBlock>()); },
     -1,
     -1,
     false,
@@ -772,6 +781,9 @@ const BlockDescriptor kPianoBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 } // namespace xythos

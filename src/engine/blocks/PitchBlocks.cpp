@@ -1357,6 +1357,7 @@ const BlockDescriptor kHarmonizerBlockDescriptor = {
     true,
     false,
     true, // hq
+    true, // poly
 };
 
 } // namespace xythos

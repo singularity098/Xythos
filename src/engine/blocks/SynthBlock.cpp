@@ -3,9 +3,8 @@
 
 #include "engine/blocks/SynthBlock.hpp"
 
-#include "engine/blocks/TrackedInput.hpp"
+#include "engine/blocks/TrackedSynth.hpp"
 #include "engine/dsp/Oscillator.hpp"
-#include "engine/dsp/Smoother.hpp"
 #include "engine/dsp/Svf.hpp"
 
 #include <algorithm>
@@ -20,18 +19,14 @@ constexpr const char* kOctaveNames[] = { "-2", "-1", "0", "+1" };
 
 constexpr float kEnvOctaves = 5.0f;
 
-class SynthBlock : public Block {
+class SynthBlock : public TrackedSynth {
 public:
-    SynthBlock() { fMix.snap(1.0f); }
-
-    void prepare(double sampleRate, uint32_t /*maxFrames*/) override
+    SynthBlock()
     {
-        fSampleRate = sampleRate;
-        fMix.prepare(sampleRate);
-        fInput.prepare(sampleRate);
-        updateAmp();
-        updateGlide();
-        reset();
+        setAttack(5.0f);
+        setRelease(30.0f);
+        setGlide(10.0f);
+        setMix(100.0f);
     }
 
     void setParam(int index, float value) override
@@ -41,92 +36,39 @@ public:
         case kSynthParamWave:
             fWave = static_cast<SynthWave>(std::clamp(static_cast<int>(value), 0, 3));
             break;
-        case kSynthParamOctave:
-            fOctaveRatio = std::exp2(std::clamp(static_cast<int>(value), 0, 3) - 2);
-            break;
+        case kSynthParamOctave:    setOctave(value); break;
         case kSynthParamCutoff:    fCutoff = value; break;
         case kSynthParamResonance: fQ = value; break;
         case kSynthParamEnv:       fEnvAmount = value / 100.0f; break;
-        case kSynthParamAttack:
-            fAttackMs = value;
-            updateAmp();
-            break;
-        case kSynthParamGlide:
-            fGlideMs = value;
-            updateGlide();
-            break;
-        case kSynthParamMix:
-            fMix.setTarget(value / 100.0f);
-            break;
-        case kSynthParamPickFilter:
-            fInput.setPickFilter(value);
-            break;
-        case kSynthParamTrack:
-            fInput.setTrackRig(value);
-            break;
+        case kSynthParamAttack:    setAttack(value); break;
+        case kSynthParamGlide:     setGlide(value); break;
+        case kSynthParamMix:       setMix(value); break;
+        case kSynthParamPickFilter: setPickFilter(value); break;
+        case kSynthParamTrack:     setTrack(value); break;
         }
     }
 
-    bool configure(const nlohmann::json& config) override
+protected:
+    void resetVoice() override
     {
-        fInput.configure(config);
-        return true;
-    }
-
-    uint32_t latency() const override { return fInput.latency(); }
-
-    void setRigInput(const float* const* input, uint32_t numChannels) override { fInput.setRig(input, numChannels); }
-
-    void process(float* const* io, uint32_t numChannels, uint32_t frames) override
-    {
-        if (fSnap)
-        {
-            fSnap = false;
-            fMix.snap(fMix.target());
-        }
-        for (uint32_t i = 0; i < frames; ++i)
-        {
-            // (io[..][i] is the dry signal from here on: delayed by the lookahead, if any)
-            const NoteTracker::Note& tracked = fInput.process(io, numChannels, i);
-            if (tracked.hz > 0.0)
-                fTargetHz = tracked.hz;
-
-            // the oscillator glides to the tracked pitch
-            fHz += (fTargetHz - fHz) * fGlideCoef;
-            const double hz = std::min(fHz * fOctaveRatio, 0.45 * fSampleRate);
-            const double dt = hz / fSampleRate;
-            fPhase += dt;
-            if (fPhase >= 1.0)
-                fPhase -= 1.0;
-            fSubPhase += 0.5 * dt;
-            if (fSubPhase >= 1.0)
-                fSubPhase -= 1.0;
-            const float osc = oscillator(dt);
-
-            // amplitude: the guitar's envelope, with Attack as a swell at the start of each note
-            const float env = tracked.envelope;
-            const bool on = tracked.on;
-            const float level = std::min(1.0f, env * 4.0f);
-            fAmp += ((on ? level : 0.0f) - fAmp) * (on && level > fAmp ? fAmpAttack : fAmpRelease);
-
-            const double cutoff = fCutoff * std::exp2(fEnvAmount * kEnvOctaves * std::min(1.0f, env * 6.0f));
-            fFilter.set(fSampleRate, std::min(cutoff, 0.45 * fSampleRate), fQ);
-            const float synth = fFilter.process(osc).low * fAmp * 0.5f;
-
-            const float mix = fMix.next();
-            for (uint32_t ch = 0; ch < numChannels; ++ch)
-                io[ch][i] = io[ch][i] * (1.0f - mix) + synth * mix;
-        }
-    }
-
-    void reset() override
-    {
-        fInput.reset();
         fFilter.reset();
-        fTargetHz = fHz = 110.0;
         fPhase = fSubPhase = 0.0;
-        fAmp = 0.0f;
-        fSnap = true;
+    }
+
+    void render(const Note& note, float& left, float& right) override
+    {
+        const double dt = note.dt;
+        fPhase += dt;
+        if (fPhase >= 1.0)
+            fPhase -= 1.0;
+        fSubPhase += 0.5 * dt;
+        if (fSubPhase >= 1.0)
+            fSubPhase -= 1.0;
+        const float osc = oscillator(dt);
+        // the filter opens with the guitar's envelope
+        const double cutoff = fCutoff * std::exp2(fEnvAmount * kEnvOctaves * std::min(1.0f, note.envelope * 6.0f));
+        fFilter.set(fSampleRate, std::min(cutoff, 0.45 * fSampleRate), fQ);
+        left = right = fFilter.process(osc).low * note.amp * 0.5f;
     }
 
 private:
@@ -145,32 +87,12 @@ private:
         }
     }
 
-    void updateAmp()
-    {
-        fAmpAttack = 1.0f - EnvelopeFollower::coef(fSampleRate, std::max(1.0f, fAttackMs));
-        fAmpRelease = 1.0f - EnvelopeFollower::coef(fSampleRate, 30.0);
-    }
-
-    void updateGlide() { fGlideCoef = 1.0 - EnvelopeFollower::coef(fSampleRate, std::max(0.1f, fGlideMs)); }
-
-    double fSampleRate = 48000.0;
     SynthWave fWave = SynthWave::Square;
-    double fOctaveRatio = 1.0;
     float fCutoff = 400.0f;
     float fQ = 4.0f;
     float fEnvAmount = 0.6f;
-    float fAttackMs = 5.0f;
-    float fGlideMs = 10.0f;
-
-    TrackedInput fInput;
     Svf fFilter;
-    Smoother fMix;
-    double fTargetHz = 110.0, fHz = 110.0;
-    double fGlideCoef = 1.0;
     double fPhase = 0.0, fSubPhase = 0.0;
-    float fAmp = 0.0f;
-    float fAmpAttack = 1.0f, fAmpRelease = 1.0f;
-    bool fSnap = true;
 };
 
 } // namespace
@@ -192,7 +114,7 @@ const BlockDescriptor kSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new SynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<SynthBlock>()); },
     -1,
     -1,
     false,
@@ -200,6 +122,9 @@ const BlockDescriptor kSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 } // namespace xythos

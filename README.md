@@ -40,11 +40,11 @@
 | Reverb | Reverb (room, hall, plate), Spring Reverb, Shimmer, Freeze, Bloom Reverb, Gated Reverb |
 | Delay | Delay, Doppelganger Delay, Tape Echo, Ducking Delay, Reverse Delay, Pitch Delay, Beat Repeat, Looper |
 | Pitch | Octave, Poly Octave, Pitch Shifter, Whammy, Harmonizer, Detune, Capo, Sustainer |
-| Synth | Synth, Super Saw, FM Synth, Fold Synth, Acid Synth, String Machine, Chip Synth, Poly Chip (polyphonic), Arpeggiator, Organ |
+| Synth | Synth, Super Saw, FM Synth, Fold Synth, Acid Synth, String Machine, Chip Synth, Arpeggiator, Organ |
 | Filter | Filter, Robot Filter |
 | Wah | Wah, Auto Wah, Talk Box |
 
-A few that you won't find everywhere: the **Doppelganger Delay**, whose echoes alternate between a flanger and a chorus; the **Modulation Sweeper**, which morphs back and forth between two or three of chorus, flanger, phaser and vibrato; and the **Poly Chip**, an 8-bit synth that follows chords.
+A few that you won't find everywhere: the **Doppelganger Delay**, whose echoes alternate between a flanger and a chorus; the **Modulation Sweeper**, which morphs back and forth between two or three of chorus, flanger, phaser and vibrato; and a **Poly** mode on every synth and every other pedal that follows your notes, so the synths play chords, each note with its own voice.
 
 Delay times and modulation rates can sync to your DAW's tempo, and synced LFOs lock to the beat.
 

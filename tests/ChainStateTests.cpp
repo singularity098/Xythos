@@ -6,7 +6,9 @@
 #include "TestSupport.hpp"
 #include "state/ChainState.hpp"
 #include "engine/BlockRegistry.hpp"
+#include "engine/blocks/SynthBlocks.hpp"
 #include "engine/looper/Looper.hpp"
+#include "state/ChainMigration.hpp"
 
 using namespace xythos;
 
@@ -293,4 +295,47 @@ TEST_CASE("whole numbers written as huge decimals don't load, rather than overfl
     const std::optional<ChainState> chain = ChainState::fromJson(R"({"version": 1.0, "blocks": [{"type": "delay", "slot": 3.0}]})");
     REQUIRE(chain);
     CHECK(chain->blocks[0].slot == 3);
+}
+
+TEST_CASE("a Poly Chip (removed) becomes a Chip Synth in Poly, keeping its settings and MIDI mappings")
+{
+    // as the Poly Chip saved it: Wave, Voices, Focus, Arp, Arp Rate, Release, Crush, Octave, Mix, Quantize,
+    // Pick Filter, Track (normalized)
+    ChainState saved;
+    BlockState old;
+    old.typeId = kRetiredPolyChipType;
+    old.slot = 3;
+    old.bypass = true;
+    old.config = { { "lookahead", 10.0 } };
+    const float values[] = { 0.333f, 0.6f, 0.7f, 0.5f, 0.4f, 0.2f, 0.75f, 0.666f, 0.8f, 1.0f, 0.25f, 0.0f };
+    for (size_t p = 0; p < std::size(values); ++p)
+        old.params[p] = values[p];
+    saved.blocks.push_back(old);
+    saved.midi.push_back({ 0, 20, slotParam(3, 6) });
+    saved.midi.push_back({ 0, 21, slotParam(3, 1) });
+    saved.midi.push_back({ 0, 22, slotBypassParam(3) });
+    std::optional<ChainState> chain = ChainState::fromJson(saved.toJson());
+    REQUIRE(chain);
+    CHECK_FALSE(chain->validate(BlockRegistry::builtin()));
+    const std::vector<int> slots = retirePolyChips(*chain);
+    REQUIRE(slots == std::vector<int> { 3 });
+    CHECK(chain->validate(BlockRegistry::builtin()));
+    const BlockState& block = chain->blocks[0];
+    CHECK(block.typeId == kChipSynthBlockDescriptor.typeId);
+    CHECK(block.bypass);
+    CHECK(polyFromConfig(block.config));
+    CHECK(block.config.value("lookahead", 0.0) == 10.0);
+    CHECK(block.params[kChipParamWave] == doctest::Approx(0.333f));
+    CHECK(block.params[kChipParamCrush] == doctest::Approx(0.75f));
+    CHECK(block.params[kChipParamOctave] == doctest::Approx(0.666f));
+    CHECK(block.params[kChipParamMix] == doctest::Approx(0.8f));
+    CHECK(block.params[kChipParamQuantize] == doctest::Approx(1.0f));
+    CHECK(block.params[kChipParamPickFilter] == doctest::Approx(0.25f));
+    CHECK(block.params[kChipParamTrack] == doctest::Approx(0.0f));
+    CHECK(block.params[kChipParamArp] == doctest::Approx(0.0f));   // Off
+    CHECK(block.params[kChipParamVibrato] == doctest::Approx(0.0f)); // the Poly Chip had none
+    // Crush's mapping follows it, Voices' goes, the bypass's stays
+    REQUIRE(chain->midi.size() == 2);
+    CHECK(chain->midi[0].param == slotParam(3, kChipParamCrush));
+    CHECK(chain->midi[1].param == slotBypassParam(3));
 }

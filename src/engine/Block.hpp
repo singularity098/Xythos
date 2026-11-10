@@ -176,6 +176,10 @@ struct BlockDescriptor {
     // The block has an HQ mode (spectral pitch shifting, dsp/SpectralShifter.hpp) and takes the "hq" config: the UI
     // shows a Quality button
     bool hq = false;
+    // The block follows the played note and has a Poly mode (owner, 2026-11-10): the "poly" config picks the chord
+    // finder (dsp/PolyNoteFinder.hpp) over the single-note tracker; the UI shows a Tracking button (Mono, the default,
+    // or Poly)
+    bool poly = false;
 };
 
 // The "hq" block config (BlockDescriptor::hq): true for the HQ mode; absent, false or not an object: the standard one
@@ -184,6 +188,19 @@ inline bool hqFromConfig(const nlohmann::json& config)
     if (!config.is_object())
         return false;
     const auto it = config.find("hq");
+    if (it == config.end())
+        return false;
+    if (it->is_boolean())
+        return it->get<bool>();
+    return it->is_number() && it->get<double>() >= 0.5;
+}
+
+// The "poly" block config (BlockDescriptor::poly): true for Poly tracking; absent, false or not an object: Mono
+inline bool polyFromConfig(const nlohmann::json& config)
+{
+    if (!config.is_object())
+        return false;
+    const auto it = config.find("poly");
     if (it == config.end())
         return false;
     if (it->is_boolean())
