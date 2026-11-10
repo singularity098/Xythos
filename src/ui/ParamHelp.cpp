@@ -2019,6 +2019,15 @@ constexpr BlockHelp kBlockHelp[] = {
     { "fart", "Mix", SYNTH_MIX_HELP },
     { "fart", "Pick Filter", SYNTH_PICK_FILTER_HELP },
     { "fart", "Track", TRACK_HELP },
+    { "fart", "Overlap",
+      "Stack lets farts pile up: a new note starts a new one while the last plays on (up to three). Single plays one at "
+      "a time: a new note cuts the last one short, and with Tracking on Poly a chord gives one fart, its lowest note's. "
+      "Use Single when fast playing gets too cluttered." },
+    { "fart", "Duration",
+      "Varies plays each fart faster for high notes and slower for low ones, like a sampler, so high farts are short "
+      "and low ones drag on. Fixed keeps every fart its recorded length at any note (it changes the pitch only), so a "
+      "run of high notes doesn't turn into a blur of chirps or low ones into long rumbles. No effect with Pitch on "
+      "Natural." },
     { "trumpet", "Bright", "How much brighter the trumpet gets as you play harder. Low settings stay mellow, like a flugelhorn." },
     { "trumpet", "Growl",
       "Adds a brassy growl to hard attacks, like a player pushing air through the horn. 0% keeps it smooth." },

@@ -21,6 +21,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
@@ -526,6 +527,98 @@ TEST_CASE("fart's Random plays at any note, Tone filters, and the samples' WAV r
     CHECK(pcmFromWav(nullptr, 0).frames == 0);
     const EmbeddedFile none = builtinFartSample("no such fart");
     CHECK(none.data == nullptr);
+}
+
+// Notes on the synthetic guitar: (midi, start, string)
+std::vector<std::vector<float>> played(const std::vector<std::array<double, 3>>& list, double length, double total)
+{
+    std::vector<guitar::Note> notes;
+    for (const auto& n : list)
+    {
+        guitar::Note note;
+        note.midi = n[0];
+        note.start = n[1];
+        note.string = static_cast<int>(n[2]);
+        note.length = length;
+        notes.push_back(note);
+    }
+    const guitar::Performance p = guitar::perform(notes, total, { 0.0f, 0.0f });
+    return { p.signal };
+}
+
+TEST_CASE("fart's Overlap Single plays one at a time")
+{
+    // Balloon (7.4 s), as recorded: the first still sounds when the second starts
+    auto play = [](bool single, bool second) {
+        auto block = make(kFartBlockDescriptor);
+        block->setParam(kFartParamType, static_cast<float>(kFartTypes - 1));
+        block->setParam(kFartParamPitch, 1.0f);
+        block->setParam(kFartParamOverlap, single ? 1.0f : 0.0f);
+        std::vector<std::array<double, 3>> notes { { 52.0, 0.05, 2.0 } };
+        if (second)
+            notes.push_back({ 55.0, 1.05, 2.0 });
+        auto x = played(notes, 0.3, 3.0);
+        testing::runBlock(*block, x);
+        return x[0];
+    };
+    const auto first = play(false, false), stack = play(false, true), single = play(true, true);
+    // stacked, the first plays on under the second; single, the second is all there is
+    std::vector<float> rest(stack.size());
+    for (size_t i = 0; i < rest.size(); ++i)
+        rest[i] = stack[i] - single[i] - first[i];
+    CHECK(testing::rms(first, ms(1300), ms(3000)) > 0.01);
+    CHECK(testing::rms(single, ms(1300), ms(3000)) > 0.01);
+    CHECK(testing::rms(rest, ms(1300), ms(3000)) < 0.01 * testing::rms(first, ms(1300), ms(3000)));
+    // and before the second, they're the same
+    CHECK(testing::rms(single, ms(300), ms(1000)) == doctest::Approx(testing::rms(first, ms(300), ms(1000))));
+
+    // Poly: a chord gives one fart, not three
+    auto chord = [](bool single) {
+        auto block = make(kFartBlockDescriptor);
+        block->configure(nlohmann::json { { "poly", true } });
+        block->setParam(kFartParamType, static_cast<float>(kFartTypes - 1));
+        block->setParam(kFartParamPitch, 1.0f);
+        block->setParam(kFartParamOverlap, single ? 1.0f : 0.0f);
+        auto x = played({ { 40.0, 0.05, 0.0 }, { 47.0, 0.05, 1.0 }, { 52.0, 0.05, 2.0 } }, 1.0, 2.0);
+        testing::runBlock(*block, x);
+        return testing::rms(x[0], ms(500), ms(2000));
+    };
+    const double stacked = chord(false), one = chord(true);
+    CAPTURE(stacked);
+    CAPTURE(one);
+    CHECK(one > 0.005);
+    CHECK(one < 0.6 * stacked);
+}
+
+TEST_CASE("fart's Duration Fixed keeps the length and changes the pitch")
+{
+    auto play = [](double midi) {
+        auto block = make(kFartBlockDescriptor);
+        block->setParam(kFartParamType, static_cast<float>(kFartTypes)); // Mouse: 0.38 s
+        block->setParam(kFartParamOctave, 2.0f);
+        block->setParam(kFartParamDuration, 1.0f);
+        auto x = picked(midi, 0.3, 2.0);
+        testing::runBlock(*block, x);
+        return x[0];
+    };
+    const auto low = play(57.0), high = play(69.0);
+    auto span = [](const std::vector<float>& x) {
+        const auto [first, last] = soundingSpan(x, 1e-3f);
+        return static_cast<double>(last - first) / kRate;
+    };
+    CAPTURE(span(low));
+    CAPTURE(span(high));
+    CHECK(span(low) == doctest::Approx(0.38).epsilon(0.15));
+    CHECK(span(high) == doctest::Approx(span(low)).epsilon(0.1));
+    // an octave apart all the same
+    CHECK(highShare(high, 600.0, ms(80), ms(350)) > 1.3 * highShare(low, 600.0, ms(80), ms(350)));
+    // and no quieter than a sampler's
+    auto block = make(kFartBlockDescriptor);
+    block->setParam(kFartParamType, static_cast<float>(kFartTypes));
+    block->setParam(kFartParamOctave, 2.0f);
+    auto x = picked(69.0, 0.3, 2.0);
+    testing::runBlock(*block, x);
+    CHECK(testing::rms(high, ms(60), ms(200)) > 0.6 * testing::rms(x[0], ms(60), ms(200)));
 }
 
 TEST_CASE("trumpet and violin play the note you play")

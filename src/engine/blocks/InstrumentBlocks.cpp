@@ -95,6 +95,8 @@ constexpr std::array<const char*, kFartTypes + 1> fartTypeNames()
 constexpr std::array<const char*, kFartTypes + 1> kFartTypeNames = fartTypeNames();
 constexpr const char* kFartPitchNames[] = { "Follow", "Natural" };
 constexpr const char* kFartHoldNames[] = { "One Shot", "Held" };
+constexpr const char* kFartOverlapNames[] = { "Stack", "Single" };
+constexpr const char* kFartDurationNames[] = { "Varies", "Fixed" };
 
 // The samples' PCM, found in their embedded WAVs once (the first Fart block made, never on the audio thread)
 const std::array<PcmView, kFartTypes>& fartPcm()
@@ -123,6 +125,10 @@ constexpr double kFartMinRatio = 0.125, kFartMaxRatio = 4.0;
 // the samples' level (each about -16 dBFS RMS by its gain) to the block's: a little over a DI guitar's, with room for
 // three at once
 constexpr float kFartLevel = 0.6f;
+// Overlap Single: how quickly a new fart fades out the last one, in seconds
+constexpr double kFartCutFade = 0.01;
+// Duration Fixed: the grains' length, about this many seconds (a whole number of the note's periods)
+constexpr double kFartGrain = 0.035;
 
 class FartBlock : public TrackedSynth {
 public:
@@ -141,10 +147,16 @@ public:
         case kFartParamHold:       fHeld = value >= 0.5f; break;
         case kFartParamPickFilter: setPickFilter(value); break;
         case kFartParamTrack:      setTrack(value); break;
+        case kFartParamOverlap:    fSingle = value >= 0.5f; break;
+        case kFartParamDuration:   fFixed = value >= 0.5f; break;
         }
     }
 
 protected:
+    bool singleSound() const override { return fSingle; }
+
+    void stopSounds() override { cutAll(); }
+
     void prepareVoice() override { updateTone(); }
 
     void resetVoice() override
@@ -181,7 +193,11 @@ private:
     struct Voice {
         bool active = false;
         int sample = 0;
-        double pos = 0.0, step = 1.0;
+        double pos = 0.0, step = 1.0; // where it is in the sample, and how fast it reads it (the pitch)
+        double advance = 1.0;   // how fast pos moves: step, or with Duration Fixed the sample's own speed
+        bool grains = false;    // Duration Fixed at another pitch: two grains around pos, read at step
+        double grainLength = 1.0; // in output samples
+        std::array<double, 2> grainPhase {}; // each grain's time into itself, in output samples
         double end = 0.0;       // where it stops (Length), in the sample's frames
         double fadeFrom = 0.0;  // where its fade-out to `end` starts
         float gain = 1.0f;
@@ -244,8 +260,19 @@ private:
         return candidates[static_cast<size_t>(c)];
     }
 
+    // Fades out every sounding fart quickly (Overlap Single)
+    void cutAll()
+    {
+        const auto step = static_cast<float>(1.0 / (kFartCutFade * fSampleRate));
+        for (Voice& v : fVoices)
+            if (v.active)
+                v.fadeStep = std::max(v.fadeStep, step);
+    }
+
     void trigger(const Note& note)
     {
+        if (fSingle)
+            cutAll();
         // too many sounding: the oldest fades out quickly
         int sounding = 0;
         Voice* oldest = nullptr;
@@ -289,9 +316,20 @@ private:
         voice->sample = sample;
         voice->pos = 0.0;
         voice->step = ratio * pcm.sampleRate / fSampleRate;
+        voice->grains = fFixed && ratio != 1.0;
+        voice->advance = voice->grains ? pcm.sampleRate / fSampleRate : voice->step;
+        if (voice->grains)
+        {
+            // a whole number of the note's periods, so the grains overlap in step with it
+            const double hz = ratio * kFartSamples[sample].hz;
+            const double periods = std::max(1.0, std::round(kFartGrain * hz));
+            voice->grainLength = std::max(8.0, periods * fSampleRate / hz);
+            // the second grain is at its middle (full weight, reading pos) at the start, so the attack is whole
+            voice->grainPhase = { 0.0, 0.5 * voice->grainLength };
+        }
         voice->end = static_cast<double>(pcm.frames - 1) * fLength;
         // fade out over its last 30 ms (as heard) when Length cuts it short; the whole sample has its own fade
-        const double fade = fLength < 1.0f ? std::min(0.5 * voice->end, 0.03 * fSampleRate * voice->step) : 0.0;
+        const double fade = fLength < 1.0f ? std::min(0.5 * voice->end, 0.03 * fSampleRate * voice->advance) : 0.0;
         voice->fadeFrom = voice->end - fade;
         voice->gain = kFartSamples[sample].gain * kFartLevel;
         voice->velocity = 0.0f;
@@ -313,9 +351,49 @@ private:
         if (v.time < 0.015f)
             v.velocity = std::max(v.velocity, std::min(1.0f, note.envelope * 5.0f));
 
-        // cubic Hermite between the samples around pos
-        const auto i = static_cast<int64_t>(v.pos);
-        const auto t = static_cast<float>(v.pos - static_cast<double>(i));
+        float y;
+        if (!v.grains)
+        {
+            y = readAt(pcm, v.pos);
+        }
+        else
+        {
+            // Duration Fixed: two grains, half a grain apart, each read at the note's speed and centred on pos (a
+            // grain at its middle reads pos itself), with sin² windows that add up to 1. A grain reading outside
+            // the sample (at its start, shifted up) doesn't count, so the start isn't quieter.
+            float sum = 0.0f, weight = 0.0f;
+            const double half = 0.5 * v.grainLength;
+            const double frames = static_cast<double>(pcm.frames);
+            for (double& phase : v.grainPhase)
+            {
+                const double at = v.pos + (phase - half) * (v.step - v.advance);
+                const auto s = static_cast<float>(std::sin(3.14159265358979 * phase / v.grainLength));
+                if (at >= 0.0 && at < frames)
+                {
+                    sum += s * s * readAt(pcm, at);
+                    weight += s * s;
+                }
+                phase += 1.0;
+                if (phase >= v.grainLength)
+                    phase -= v.grainLength;
+            }
+            y = weight > 1e-3f ? sum / std::max(weight, 0.5f) : 0.0f;
+        }
+
+        float env = v.fade;
+        if (v.pos > v.fadeFrom && v.end > v.fadeFrom)
+            env *= static_cast<float>((v.end - v.pos) / (v.end - v.fadeFrom));
+        if (v.fadeStep > 0.0f)
+            v.fade -= v.fadeStep;
+        v.pos += v.advance;
+        return y * v.gain * v.velocity * env;
+    }
+
+    // The sample at a position: cubic Hermite between the samples around it
+    static float readAt(const PcmView& pcm, double pos)
+    {
+        const auto i = static_cast<int64_t>(pos);
+        const auto t = static_cast<float>(pos - static_cast<double>(i));
         auto at = [&](int64_t k) {
             return k < 0 || k >= static_cast<int64_t>(pcm.frames) ? 0.0f : pcmSample(pcm, static_cast<uint32_t>(k));
         };
@@ -323,15 +401,7 @@ private:
         const float c1 = 0.5f * (y2 - y0);
         const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
         const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-        const float y = ((c3 * t + c2) * t + c1) * t + y1;
-
-        float env = v.fade;
-        if (v.pos > v.fadeFrom && v.end > v.fadeFrom)
-            env *= static_cast<float>((v.end - v.pos) / (v.end - v.fadeFrom));
-        if (v.fadeStep > 0.0f)
-            v.fade -= v.fadeStep;
-        v.pos += v.step;
-        return y * v.gain * v.velocity * env;
+        return ((c3 * t + c2) * t + c1) * t + y1;
     }
 
     // Tone: 50% leaves the samples as they are; below, a low-pass closes down to 250 Hz; above, a high-pass opens up
@@ -361,6 +431,7 @@ private:
     int fToneMode = 0; // -1: low-pass, 0: none, 1: high-pass
     Svf fTone;
     bool fNatural = false, fHeld = false, fWasOn = false;
+    bool fSingle = false, fFixed = false;
     std::array<Voice, kFartVoices> fVoices;
     Noise fRandom;
     int fLast = -1;
@@ -849,6 +920,8 @@ const BlockDescriptor kFartBlockDescriptor = {
         ParamSpec { "Hold", "", 0.0f, 1.0f, 0.0f, ParamScale::Choice, kFartHoldNames },
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
+        ParamSpec { "Overlap", "", 0.0f, 1.0f, 0.0f, ParamScale::Choice, kFartOverlapNames },
+        ParamSpec { "Duration", "", 0.0f, 1.0f, 0.0f, ParamScale::Choice, kFartDurationNames },
     },
     [] { return std::unique_ptr<Block>(new Voiced<FartBlock>()); },
     -1,
