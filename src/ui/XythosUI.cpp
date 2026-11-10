@@ -30,9 +30,7 @@
 #include "engine/blocks/DelayBlock.hpp"
 #include "engine/blocks/IrBlock.hpp"
 #include "engine/blocks/LooperBlock.hpp"
-#include "engine/blocks/MidiOutBlock.hpp"
 #include "engine/blocks/NamBlock.hpp"
-#include "engine/blocks/PolyChipBlock.hpp"
 #include "state/ChainExchange.hpp"
 #include "state/ChainMigration.hpp"
 #include "state/ChainState.hpp"
@@ -620,10 +618,9 @@ std::vector<AddItem> addItems(Category category)
         return items;
     for (const BlockDescriptor* type : BlockRegistry::builtin().types())
     {
-        // retired types stay registered only so chains saved with them still build: the Looper block (owner,
-        // 2026-11-01: the looper is global, in the top bar) and the Poly Chip (owner, 2026-11-08: the polyphonic
-        // tracking is deactivated)
-        if (type->category == category && type != &kLooperBlockDescriptor && type != &kPolyChipBlockDescriptor)
+        // the Looper block is retired (owner, 2026-11-01: the looper is global, in the top bar); the type stays only
+        // so chains saved with one still build
+        if (type->category == category && type != &kLooperBlockDescriptor)
             items.push_back({ type->displayName, type });
     }
     return items;
@@ -8556,13 +8553,6 @@ private:
                 if (p == kLooperParamBpm)
                     controls.push_back({ Cell::Param, kLooperParamTap });
             }
-        }
-        else if (type == &kMidiOutBlockDescriptor)
-        {
-            // Poly mode is deactivated (owner, 2026-11-08): Mode and Focus (Poly's) are hidden, the block sends Mono
-            for (int p = 0; p < type->numParams; ++p)
-                if (p != kMidiOutParamMode && p != kMidiOutParamFocus)
-                    controls.push_back({ Cell::Param, p });
         }
         else
         {

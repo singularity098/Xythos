@@ -28,7 +28,6 @@ constexpr double kNewNoteJump = 0.6; // semitones: a jump this big without a pic
 constexpr int kBendStep = 16;        // of 16384: smaller bend changes aren't sent
 constexpr int kBendEvery = 32;       // samples between bend messages, at most
 constexpr float kPolyPickMs = 15.0f; // Poly's shortest Pick Filter
-constexpr bool kPolyEnabled = false; // Poly mode (chords) is deactivated: Mode is ignored and the UI hides it
 
 class MidiOutBlock : public Block {
 public:
@@ -66,10 +65,7 @@ public:
         const int choice = static_cast<int>(value);
         switch (index)
         {
-        case kMidiOutParamMode:
-            // Poly is deactivated (owner, 2026-11-08): always Mono; set kPolyEnabled to bring it back
-            change(fPolyMode, kPolyEnabled && choice == 1);
-            break;
+        case kMidiOutParamMode:      change(fPolyMode, choice == 1); break;
         case kMidiOutParamChannel:   change(fChannel, std::clamp(choice, 0, 15)); break;
         case kMidiOutParamOctave:    change(fOctave, std::clamp(choice, 0, 4) - 2); break;
         case kMidiOutParamTranspose: change(fTranspose, std::clamp(choice, 0, 24) - 12); break;

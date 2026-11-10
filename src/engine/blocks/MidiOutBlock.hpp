@@ -10,7 +10,7 @@ namespace xythos {
 // MIDI Out: turns your playing into MIDI notes for a synth plugin after Xythos (in Reaper, the next plugin in the
 // FX chain). Mono follows single notes (dsp/NoteTracker.hpp): a note on at each note's start, at a velocity from
 // how hard it was picked (Dynamics), a note off when it ends, and pitch bend for bends and vibrato (Bend: the range
-// the synth is set to; Off sends plain notes). Poly (deactivated, owner 2026-11-08: Mode is ignored, always Mono) finds the notes of chords (dsp/PolyNoteFinder.hpp: Focus and
+// the synth is set to; Off sends plain notes). Poly finds the notes of chords (dsp/PolyNoteFinder.hpp: Focus and
 // the Pick Filter as in the Poly Chip, at least 15 ms), without bend. Channel, Octave and Transpose shift what is
 // sent; Audio passes the guitar on or mutes it. Track and Lookahead as in the synths: with lookahead, the notes are
 // sent from their picks, in time with the (delayed) audio. The engine ends a bypassed or removed block's notes.

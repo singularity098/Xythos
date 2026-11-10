@@ -342,12 +342,11 @@ TEST_CASE("poly chip voices: 1 plays only the loudest note")
 {
     auto block = polyChip();
     block->setParam(kPolyChipParamVoices, 1.0f);
+    // (guitar-like notes: the note finder takes a peak with no harmonics for noise or hum)
+    const auto quiet = note(semitone(48), 48000), louder = note(semitone(55), 48000);
     std::vector<std::vector<float>> x(1, std::vector<float>(48000, 0.0f));
     for (size_t i = 0; i < x[0].size(); ++i)
-    {
-        const double t = static_cast<double>(i) / kRate;
-        x[0][i] = static_cast<float>(0.1 * std::sin(2 * M_PI * semitone(48) * t) + 0.3 * std::sin(2 * M_PI * semitone(55) * t));
-    }
+        x[0][i] = 0.3f * quiet[0][i] + louder[0][i];
     testing::runBlock(*block, x);
     const double loud = toneAt(x[0], semitone(55), 24000, 48000);
     CHECK(loud > 0.05);
@@ -360,7 +359,7 @@ TEST_CASE("poly chip arpeggiates the chord, one note at a time")
     auto block = polyChip();
     block->setParam(kPolyChipParamArp, static_cast<float>(PolyChipArp::Up));
     block->setParam(kPolyChipParamArpRate, 10.0f);
-    auto x = chord({ semitone(48), semitone(55), semitone(64) }, 96000, false);
+    auto x = chord({ semitone(48), semitone(55), semitone(64) }, 96000);
     testing::runBlock(*block, x);
     // each note gets its turn
     for (const int midi : notes)
@@ -464,8 +463,10 @@ TEST_CASE("poly chip pick filter keeps the pick attack from sounding as high not
         const double clean = strayNotes(y[0], midi, 0, ms(150));
         CAPTURE(unfiltered);
         CAPTURE(clean);
+        // (the note finder waits for a single note to be found before it starts others, whatever the Pick Filter,
+        // so without it the attack is nearly as clean: this was unfiltered > 3 * clean with the filter bank)
         CHECK(clean < 0.01); // the analysis window's own floor around the note
-        CHECK(unfiltered > 3.0 * clean);
+        CHECK(unfiltered < 0.05);
         // and the note itself still plays
         CHECK(toneAt(y[0], hz, ms(200), ms(700)) > 0.05);
     }

@@ -31,24 +31,38 @@ public:
     void reset()
     {
         fLevel = 0.0f;
+        fHeldPeak = 0.0f;
         fHold = 0;
     }
 
     float process(float in, double hz)
     {
         const float a = std::fabs(in);
+        const int hold = hz > 0.0 ? static_cast<int>(1.2 * fSampleRate / hz) : fDefaultHold;
         if (a > fLevel)
         {
             fLevel += (a - fLevel) * fAttack;
-            fHold = hz > 0.0 ? static_cast<int>(1.2 * fSampleRate / hz) : fDefaultHold;
-        }
-        else if (fHold > 0)
-        {
-            --fHold;
+            fHold = hold;
+            fHeldPeak = 0.0f;
         }
         else
         {
-            fLevel *= fRelease;
+            // (down to the highest peak since, then held again: see NoteTracker::followLevel())
+            fHeldPeak = std::max(fHeldPeak, a);
+            if (fHold > 0)
+            {
+                --fHold;
+            }
+            else if (fLevel * fRelease <= fHeldPeak)
+            {
+                fLevel = std::max(fHeldPeak, fLevel * fRelease);
+                fHold = hold;
+                fHeldPeak = 0.0f;
+            }
+            else
+            {
+                fLevel *= fRelease;
+            }
         }
         return fLevel;
     }
@@ -58,7 +72,7 @@ public:
 private:
     double fSampleRate = 48000.0;
     float fAttack = 1.0f, fRelease = 0.99f;
-    float fLevel = 0.0f;
+    float fLevel = 0.0f, fHeldPeak = 0.0f;
     int fHold = 0, fDefaultHold = 720;
 };
 

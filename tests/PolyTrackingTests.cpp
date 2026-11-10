@@ -256,16 +256,28 @@ TEST_CASE("the poly note finder plays chords with few extra notes and no flicker
     // Holding a note briefly not found for up to 40 ms (2026-10-25: the owner heard notes cut short) adds extra time
     // here (4.0 to 6.4 s; 5.8 to 8.1 s with lookahead), mostly notes ending up to 40 ms late, which the Poly Chip's
     // release covers anyway; on the recordings a fifth less missing time.
+    //
+    // The finder was rewritten on 2026-11-09 around the owner's recordings of a 7-string and a 5-string bass (spectral
+    // peaks gone through from the lowest up, with the single-note tracker alongside; PolyNoteFinder.hpp). On those
+    // recordings: 1.9 s of note time missing in every octave per minute of notes, was 5.4; 6 s of stray notes per
+    // minute, was 29. This synthetic guitar it plays worse than the filter bank did, which was tuned on it: the last
+    // filter bank scored 36 missed, about 130 extra (6.4 s), 0.2 s of dropouts; now 45 missed, 243 extra (13.9 s),
+    // 1.9 s of dropouts. Where: palm-muted power chords (21 of 24 never found: each is gone before a chord's notes
+    // are let in, 40 ms or more after the pick), a chord's octave doublings (one note with their lower octave unless
+    // clearly louder), and notes after the strum ending early when the input falls. The recordings are what counts
+    // (CLAUDE.md); these bounds only catch it getting worse still.
     const auto plain = polyBench("poly note finder", finderTracker(0.0), false);
-    CHECK(plain.back().missed <= 38);
-    CHECK(plain.back().extra <= 140);
-    CHECK(plain.back().extraMs <= 7000.0);
-    CHECK(plain.back().dropoutMs <= 400.0);
-    CHECK(plain[0].dropoutMs <= 300.0); // strummed chords: the thirds don't flicker
+    CHECK(plain.back().missed <= 47);
+    CHECK(plain.back().extra <= 260);
+    CHECK(plain.back().extraMs <= 15000.0);
+    CHECK(plain.back().dropoutMs <= 2100.0);
+    CHECK(plain[2].missed == 0);       // single notes: all found,
+    CHECK(plain[2].extraMs <= 1300.0); // with little else
+    CHECK(plain[5].missed == 0);       // and the fast run's
     const auto ahead = polyBench("poly note finder, lookahead 20 ms", finderTracker(20.0), false);
-    CHECK(ahead.back().missed <= 21);
-    CHECK(ahead.back().extraMs <= 8800.0);
-    CHECK(ahead[2].medianDelayMs <= 10.0); // single notes start nearly on time
+    CHECK(ahead.back().missed <= 46);
+    CHECK(ahead.back().extraMs <= 17500.0);
+    CHECK(ahead[2].medianDelayMs <= 11.0); // single notes start nearly on time (within two hops)
 }
 
 TEST_CASE("the poly note finder plays a 5-string bass down to its low B")
@@ -273,9 +285,8 @@ TEST_CASE("the poly note finder plays a 5-string bass down to its low B")
     // (owner, 2026-10-29: the bands started at C2, so a 7-string's drop A and a bass's low notes weren't found)
     const auto bass = polyBench("poly note finder, bass", finderTracker(0.0), false, true);
     CHECK(bass.back().missed == 0);
-    CHECK(bass[0].extraMs <= 1500.0); // single notes: little but their release
-    CHECK(bass.back().extraMs <= 8000.0); // a bright bass line: mostly the note before ending late, and harmonics
-                                          // sounding while a low note's band rings up
+    CHECK(bass[0].extraMs <= 2600.0); // single notes: little but their release (1.5 s with the filter bank)
+    CHECK(bass.back().extraMs <= 7500.0); // a bright bass line: mostly the note before ending late
 }
 
 TEST_CASE("the poly note finder plays notes over a live input's hiss and hum to the end, and not the hum")

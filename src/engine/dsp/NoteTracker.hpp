@@ -30,6 +30,13 @@ namespace xythos {
 // - A new pick (OnsetDetector, confirmed by the level rising after it: a mute clicks too) ends the note before it,
 //   so the old pitch doesn't run into the new note; a pitch
 //   change without a pick (hammer-ons, slides) moves the note once its new pitch is confirmed.
+// - A note picked over and over (picked again within two semitones of its pitch, within 250 ms) plays on through
+//   its next picks, each a fresh start (Note::onset) for what plays it: its pitch can't be found again between the
+//   picks of a tremolo, a low string's not even once (owner's recordings, 2026-11-09).
+// - A mute without a click: the level 9 dB under where it was 64 ms before, once the note is 80 ms old (a string
+//   rings down a few dB a second; a finger stops it in 50 to 100 ms, its pitch rising meanwhile, which used to play as
+//   a run of semitones). And a note an octave or more below the playing one, without a pick, only while the level
+//   holds (a string being stopped falls away at twice its period for a moment).
 // - The Pick Filter: a new note must also hold its pitch for that long before it sounds.
 // - Lookahead (optional, up to kMaxLookaheadMs): the output is that much behind the input, and the block delays
 //   its audio to match (reporting the latency). Each note then starts back at its pick, at the pitch found
@@ -61,6 +68,9 @@ public:
         fUnvoicedLimit = static_cast<int64_t>(0.035 * sampleRate);
         fRecentNote = static_cast<int64_t>(0.15 * sampleRate);
         fPickHoldUp = static_cast<int64_t>(0.012 * sampleRate);
+        fMuteAge = static_cast<int64_t>(0.08 * sampleRate);
+        fRepeatGap = static_cast<int64_t>(0.25 * sampleRate);
+        fRepeatHold = static_cast<int64_t>(0.15 * sampleRate);
         fAverageCoef = 1.0f - EnvelopeFollower::coef(sampleRate, 3.0);
         fClickFilter.setHighPass(sampleRate, 2000.0);
         fClickDetector.prepare(sampleRate);
@@ -103,6 +113,7 @@ public:
         fTime = 0;
         fEnvelope = 0.0f;
         fHold = 0;
+        fHeldPeak = 0.0f;
         fFloor = 0.0003f;
         fOn = false;
         fSounding = false;
@@ -112,6 +123,9 @@ public:
         fMuted = false;
         fCandidate = Candidate {};
         fPickPending = false;
+        fRepeating = fHeldThrough = false;
+        fLastPick = 0;
+        fStartTime = 0;
         fPickPeak = fVelocity = 0.0f;
         fPickTime = 0;
         fLastVoiced = 0;
@@ -136,8 +150,21 @@ public:
         {
             fClickTime = fTime;
             fClickLevel = fAverage;
-            if (fOn)
-                end(fTime, EndReason::Pick);
+            // (a note picked over and over, a tremolo, plays on through its picks: its pitch can't be found again
+            // between them, a low one's not even once)
+            if (fTime - fLastPick > fRepeatGap)
+                fRepeating = false;
+            fLastPick = fTime;
+            if (fOn && fRepeating)
+            {
+                fHeldThrough = true;
+            }
+            else
+            {
+                if (fOn)
+                    end(fTime, EndReason::Pick);
+                fTracker.forget();
+            }
             fCandidate = Candidate {};
         }
         bool picked = false;
@@ -153,7 +180,10 @@ public:
             {
                 fClickTime = -1; // the level fell: a mute
                 fMuted = true;
-            fMuteLevel = fAverage;
+                fMuteLevel = fAverage;
+                if (fOn && fHeldThrough)
+                    end(fTime, EndReason::Mute);
+                fHeldThrough = false;
             }
         }
         fTracker.process(in);
@@ -172,6 +202,17 @@ public:
             fClickTime = -1;
             fPickPeak = std::max(fClickLevel, fEnvelope);
             fMuted = false;
+            if (fOn && fHeldThrough)
+            {
+                // the note played on through this pick: it starts afresh there, for what plays it
+                fVelocity = fPickPeak;
+                const int64_t from = std::max(fPickTime, fTime - fLookahead);
+                for (int64_t t = from; t <= fTime; ++t)
+                    at(t).velocity = fVelocity;
+                at(from).onset = true;
+                fPeak = fEnvelope;
+                fStartTime = fTime;
+            }
         }
         if (fOn && fEnvelope < kMuteDrop * fRecent)
         {
@@ -207,6 +248,9 @@ public:
 
     const Note& note() const { return fOut; }
 
+    // A note is playing and its pitch is clear right now: one note, not a chord (for the poly note finder)
+    bool clear() const { return fOn && fTracker.voiced() && fTracker.ownPeriod() && fTracker.aperiodicity() < kSingle; }
+
     // Why the last note ended (for tests)
     enum class EndReason { None, Pick, Mute, Gate, Unclear, OtherPitch };
     EndReason endReason() const { return fEndReason; }
@@ -220,16 +264,21 @@ private:
     };
 
     static constexpr float kClear = 0.3f;     // aperiodicity a new note needs
+    static constexpr float kSingle = 0.08f;   // ... and under this it's one note alone
     static constexpr float kMinGate = 0.0015f; // about -56 dBFS
     static constexpr float kFloorGate = 4.0f;  // a note starts 12 dB over the noise floor
     static constexpr float kPeakGate = 0.003f; // and ends 50 dB under its peak
     static constexpr float kMuteDrop = 0.1f;   // or 20 dB under the recent level (a mute)
+    static constexpr double kRepeatWidth = 2.0; // semitones: a note picked again within this of its pitch is repeated (a
+                                                // low string picked hard starts over a semitone sharp)
+    static constexpr float kMuteFall = 0.35f;  // or 9 dB under its level 64 ms before, once it's 80 ms old (a mute)
     static constexpr int kMaxMisses = 4;       // other pitches in a row that end the note without a new one
     static constexpr float kDoubtful = 0.1f;   // a new note less clear than this needs another estimate,
     static constexpr double kHarmonicWidth = 0.4; // and so does one this near (semitones) a harmonic or subharmonic
     static constexpr double kFarJump = 12.5;   // of the note before, or this far from it
     static constexpr float kLegatoLevel = 0.5f; // a new note without a pick needs the level over this share of the
                                                 // last 32 ms' (the string isn't being stopped)
+    static constexpr float kBelowLevel = 0.8f;  // ... one an octave or more below, over this share of 64 ms before
     static constexpr float kPickRise = 1.25f;  // a click is a pick once the level rises this much,
     static constexpr float kPickHold = 0.3f;   // or once it has held over this share of its level for 12 ms
     static constexpr double kHumWidth = 0.2;  // semitones around 50 and 60 Hz where a new note needs a pick (G1 is
@@ -247,19 +296,34 @@ private:
     {
         const float a = std::fabs(in);
         fAverage += (a - fAverage) * fAverageCoef;
+        // hold for a period of the note (or 15 ms), so the level doesn't ripple between the wave's peaks
+        const int hold = fOn && fHz > 0.0 ? static_cast<int>(1.2 * fSampleRate / fHz) : fDefaultHold;
         if (a > fEnvelope)
         {
             fEnvelope += (a - fEnvelope) * fAttack;
-            // hold for a period of the note (or 15 ms), so the level doesn't ripple between the wave's peaks
-            fHold = fOn && fHz > 0.0 ? static_cast<int>(1.2 * fSampleRate / fHz) : fDefaultHold;
-        }
-        else if (fHold > 0)
-        {
-            --fHold;
+            fHold = hold;
+            fHeldPeak = 0.0f;
         }
         else
         {
-            fEnvelope *= fRelease;
+            // then it falls fast, down to the highest peak since: a decaying note's next peak is a little under the
+            // held level, so it never restarted the hold, and the level fell away between a low note's peaks (a bass's
+            // open A, 36 ms apart: it read as a mute)
+            fHeldPeak = std::max(fHeldPeak, a);
+            if (fHold > 0)
+            {
+                --fHold;
+            }
+            else if (fEnvelope * fRelease <= fHeldPeak)
+            {
+                fEnvelope = std::max(fHeldPeak, fEnvelope * fRelease);
+                fHold = hold;
+                fHeldPeak = 0.0f;
+            }
+            else
+            {
+                fEnvelope *= fRelease;
+            }
         }
         // the recent level: a slower follower, which a muted string's level falls far below
         fRecent = fEnvelope > fRecent ? fEnvelope : fRecent * fRecentRelease;
@@ -284,6 +348,16 @@ private:
         // the level over the last few estimates (a string being stopped falls fast)
         fLevels[fLevelPos] = fEnvelope;
         fLevelPos = (fLevelPos + 1) % kLevels;
+        // A string rings down a few dB a second; a finger stops it within 50 to 100 ms (a bass's slower), its pitch
+        // rising meanwhile: the note ends once the level has fallen 9 dB in 64 ms, and its tail starts no other.
+        // (not between a repeated note's picks: each pick stops the string for a moment)
+        if (fOn && !holding() && fTime - fStartTime > fMuteAge && fEnvelope < kMuteFall * fLevels[fLevelPos])
+        {
+            end(fTime, EndReason::Mute);
+            fMuted = true;
+            fMuteLevel = fAverage;
+            return;
+        }
         if (fOn && hz > 0.0 && semitones(hz, fHz) < 0.6)
         {
             // the playing note: follow it (bends, vibrato), even when it's less clear
@@ -291,12 +365,19 @@ private:
             fLastVoiced = fTime;
             fMisses = 0;
             fCandidate = Candidate {};
+            if (fHeldThrough && aperiodicity <= kClear && fClickTime < 0)
+            {
+                fHeldThrough = false; // found again after the pick it played through: the same note
+                fPickPending = false;
+            }
             return;
         }
         if (hz <= 0.0 || aperiodicity > kClear)
         {
             // no clear pitch (a chord, a scrape, the decay): the note plays on, for a while
-            if (fOn && fTime - fLastVoiced > fUnvoicedLimit)
+            // (a low note's pitch takes two of its periods to come back after a pick or a slide)
+            const int64_t limit = std::max(fUnvoicedLimit, static_cast<int64_t>(2.5 * fSampleRate / std::max(fHz, 20.0)));
+            if (fOn && !holding() && fTime - fLastVoiced > limit)
                 end(std::max(fTime - fLookahead, fLastVoiced), EndReason::Unclear);
             return;
         }
@@ -320,15 +401,30 @@ private:
         // enough to start notes in the silence, now that the tracker goes down to a bass's low B)
         const bool hum = !fPickPending && !fOn
                       && (semitones(fCandidate.hz, 50.0) < kHumWidth || semitones(fCandidate.hz, 60.0) < kHumWidth);
+        // (an octave or more below the playing note, without a pick, only while the level holds: a string being
+        // stopped by a finger falls away at twice its period for a moment)
+        const bool below = fOn && !fPickPending && fCandidate.hz < 0.6 * fHz
+                        && fEnvelope < kBelowLevel * fLevels[static_cast<size_t>(fLevelPos)];
         const bool confirmed = !fMuted && fCandidate.count >= needed() && fTime - fCandidate.start >= fPickHold
-                            && fClickTime < 0 && (fPickPending || fEnvelope >= kLegatoLevel * recentLevel()) && !hum;
-        if (fOn && (confirmed || fMisses >= kMaxMisses))
+                            && fClickTime < 0 && (fPickPending || fEnvelope >= kLegatoLevel * recentLevel()) && !hum
+                            && !below;
+        if (fOn && (confirmed || (fMisses >= kMaxMisses && !holding())))
             end(fFirstMiss - static_cast<int64_t>(0.004 * fSampleRate), EndReason::OtherPitch);
         if (confirmed)
             start();
     }
 
-    float recentLevel() const { return *std::max_element(fLevels.begin(), fLevels.end()); }
+    // The highest level of the last 32 ms' estimates
+    // A note being repeated, a pick not long ago: it plays on while its pitch can't be found between the picks
+    bool holding() const { return fRepeating && fTime - fLastPick < fRepeatHold; }
+
+    float recentLevel() const
+    {
+        float level = 0.0f;
+        for (int k = 1; k <= 8; ++k)
+            level = std::max(level, fLevels[static_cast<size_t>((fLevelPos - k + kLevels) % kLevels)]);
+        return level;
+    }
 
     // How many estimates in a row a new note needs: three for a doubtful one
     int needed() const
@@ -349,6 +445,9 @@ private:
                 harmonic = harmonic || std::fabs(size - h) < kHarmonicWidth;
             if (harmonic || size > kFarJump)
                 ++count;
+            // (between a repeated note's picks its harmonics show for longer)
+            if (harmonic && holding())
+                return 6;
         }
         return std::min(count, 3);
     }
@@ -361,7 +460,12 @@ private:
         if (fPickPending)
             begin = fPickTime;
         begin = std::clamp<int64_t>(begin, fTime - fLookahead, fTime);
+        // picked again at the pitch it had, soon after: a note being repeated, which plays on through its next picks
+        fRepeating = fPickPending && fEndReason != EndReason::Gate && fTime - fEndTime < fRepeatGap && fHz > 0.0
+                  && semitones(fCandidate.hz, fHz) < kRepeatWidth;
+        fHeldThrough = false;
         fOn = true;
+        fStartTime = fTime;
         fMisses = 0;
         fHz = fCandidate.hz;
         fPeak = fEnvelope;
@@ -386,6 +490,7 @@ private:
         fOn = false;
         fEndTime = fTime;
         fEndReason = reason;
+        fHeldThrough = false;
         for (int64_t t = std::max(from, fTime - fLookahead + 1); t <= fTime; ++t)
             at(t).on = false;
     }
@@ -404,7 +509,7 @@ private:
 
     float fAttack = 1.0f, fRelease = 0.99f, fFloorFall = 0.001f, fFloorRise = 1.0f;
     float fRecentRelease = 0.999f;
-    float fEnvelope = 0.0f, fFloor = 0.0003f, fPeak = 0.0f, fRecent = 0.0f;
+    float fEnvelope = 0.0f, fFloor = 0.0003f, fPeak = 0.0f, fRecent = 0.0f, fHeldPeak = 0.0f;
     bool fMuted = false;
     int fHold = 0, fDefaultHold = 720;
     bool fSounding = false;
@@ -414,7 +519,11 @@ private:
     Candidate fCandidate;
     bool fPickPending = false;
     float fPickPeak = 0.0f, fVelocity = 0.0f;
-    int64_t fPickTime = 0, fLastVoiced = 0;
+    int64_t fPickTime = 0, fLastVoiced = 0, fStartTime = 0;
+    int64_t fMuteAge = 3840;
+    bool fRepeating = false;   // the note is being picked over and over
+    bool fHeldThrough = false; // ... and is playing on through a pick, its pitch not found again yet
+    int64_t fLastPick = 0, fRepeatGap = 12000, fRepeatHold = 7200;
     int64_t fUnvoicedLimit = 1680;
     int fMisses = 0;
     int64_t fFirstMiss = 0;
@@ -426,7 +535,7 @@ private:
     Note fOut;
     EndReason fEndReason = EndReason::None;
     int64_t fEndTime = 0, fRecentNote = 7200;
-    static constexpr int kLevels = 8;
+    static constexpr int kLevels = 16; // 64 ms of estimates
     std::array<float, kLevels> fLevels {};
     int fLevelPos = 0;
 };

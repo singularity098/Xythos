@@ -14,20 +14,29 @@
 namespace xythos {
 
 // Real-time monophonic pitch tracking for the synths and pitch pedals (dsp/NoteTracker.hpp turns it into notes):
-// YIN (de Cheveigné and Kawahara, 2002) on a copy decimated to about 12 kHz, every 4 ms, for 28..1500 Hz (a 5-string
-// bass's low B, 31 Hz, up; owner, 2026-10-29: was 60 Hz, which missed a 7-string's drop A at 55 Hz); the period
-// is then refined at the full rate (difference function around it, parabolic peak) to within a few cents. The
+// YIN's difference function (de Cheveigné and Kawahara, 2002) on a copy decimated to about 12 kHz, every 4 ms, for
+// 25..1500 Hz (a 5-string bass in drop A, 27.5 Hz, up; owner, 2026-11-09: was 28 Hz, and 60 Hz before 2026-10-29); the
+// period is then refined at the full rate (difference function around it, parabolic peak) to within a few cents. The
 // difference at each lag is over a window of one lag (at least 2 ms), so a note's estimate needs about two of its
-// periods, and is relative to the windows' energy, so fast swells and decays don't blur it. YIN's cumulative-mean
-// normalized difference and absolute threshold keep it on the fundamental of a plucked string, whose harmonics are
-// often stronger. A note is reported from about 10 ms after it starts; no latency is added to the audio. Chords
-// confuse it (it reports no pitch, or one of the notes); a chord whose notes repeat together an octave below its root
-// (power chords, major chords) reports the root, not that octave. Under 60 Hz a pitch also needs its fundamental
-// within 9 dB of its next harmonics: strings left ringing together repeat at their notes' lowest common period, often
-// down there, with nothing at it (a 7-string's or a bass's low notes have theirs).
+// periods, and is relative to the windows' energy, so fast swells and decays don't blur it. A note is reported from
+// about 10 ms after it starts; no latency is added to the audio.
+//
+// Which dip is the period (reworked on 2026-11-09 against the owner's recordings of a 7-string and a 5-string bass,
+// where YIN's fixed threshold failed: a sustained low E read as an E3 wobbling by half a semitone, a low B was cut
+// off after ten seconds):
+// - the shortest lag whose dip is within 0.06 of the deepest one, or under 0.09, and which repeats at twice its lag;
+// - while the last pitch found still has its dip, a shorter lag only if it is as deep as the deepest (a hammer-on an
+//   octave up, not the decay of the odd harmonics), until a new pick (forget());
+// - a dip with a clearly deeper one at twice or three times its lag is a blend of a decayed note's harmonics: the
+//   deeper one is the period, the pitch that share of it;
+// - a period with nothing at its own frequency (the fundamental 30 dB under the loudest harmonic of the last two
+//   periods; a single string's never was more than 23 dB under on the recordings) is the common period of notes
+//   ringing together, a power chord's an octave below its root: the pitch is then the lowest note that is there. A
+//   note that has had its fundamental for 40 ms stays that note while its period holds, whatever becomes of the
+//   fundamental (a low E's falls to 36 dB under its 2nd harmonic within seconds).
 class PitchTracker {
 public:
-    static constexpr double kMinHz = 28.0;
+    static constexpr double kMinHz = 25.0;
     static constexpr double kMaxHz = 1500.0;
 
     // Non-RT
@@ -38,10 +47,9 @@ public:
         fRate = sampleRate / fDecimation;
         fMinLag = std::max(2, static_cast<int>(fRate / kMaxHz));
         fMaxLag = std::min(kMaxLags - 2, static_cast<int>(std::ceil(fRate / kMinHz)));
-        fLowLag = std::min(fMaxLag, static_cast<int>(std::ceil(fRate / kLowHz)));
         fWindow = std::max(4, static_cast<int>(0.002 * fRate));
         fHop = std::max(1, static_cast<int>(0.004 * fRate));
-        fHighPass.setHighPass(sampleRate, 50.0);
+        fHighPass.setHighPass(sampleRate, 25.0);
         for (Biquad& filter : fAntiAlias)
             filter.setLowPass(sampleRate, std::min(0.38 * fRate, 0.45 * sampleRate));
         fEnvelope.prepare(sampleRate, 1.0, 80.0);
@@ -63,6 +71,8 @@ public:
         fHz = 0.0;
         fAperiodicity = 1.0f;
         fVoiced = false;
+        fOwnRun = fUnvoicedRun = 0;
+        fSticky = false;
     }
 
     // One input sample. Returns true when a pitch estimate was made and accepted.
@@ -84,6 +94,7 @@ public:
         if (!sounding())
         {
             fVoiced = false;
+            fOwnRun = 0;
             return false;
         }
         return estimate();
@@ -95,21 +106,35 @@ public:
     // How aperiodic the last estimate's signal was: YIN's normalized difference at the chosen period (0 = a pure
     // tone, about 0.1 for a plucked string, over kVoicedLimit for noise)
     float aperiodicity() const { return fAperiodicity; }
+    // A new pick: the next pitch is found afresh, without the last one's head start (a note picked over others left
+    // ringing would otherwise never take over from the one before it)
+    void forget()
+    {
+        fSticky = false;
+        fOwnRun = 0;
+    }
+
+    // The last pitch found is the signal's own period: one note. False for the lowest of notes ringing together.
+    bool ownPeriod() const { return fOwnPeriod; }
     float envelope() const { return fEnvelope.value(); }
     bool sounding() const { return fEnvelope.value() > kGateLevel; }
 
 private:
-    static constexpr int kHistory = 1024;
+    static constexpr int kHistory = 2048;
     static constexpr int kFullHistory = 16384; // full-rate history for the refinement (enough for 28 Hz at 192 kHz)
     static constexpr int kMaxLags = 512;
-    static constexpr float kThreshold = 0.15f;  // YIN's absolute threshold
+    static constexpr float kDipMargin = 0.06f;  // a dip this close to the deepest one counts as deep,
+    static constexpr float kDeep = 0.09f;       // or one under this
+    static constexpr float kTakeOverMargin = 0.015f; // ... this close, at a lag shorter than the last pitch's
+    static constexpr float kTruePeriod = 0.02f; // a dip this much deeper at a multiple of the lag found: the period
+    static constexpr float kRepeatMargin = 0.1f; // a period's dip at twice its lag is at most this much shallower
     static constexpr float kVoicedLimit = 0.35f; // above this at the best lag: no clear pitch
     static constexpr float kGateLevel = 0.002f;
-    static constexpr double kSubCheckHz = 200.0; // pitches under this are checked for a chord's octave below
-    static constexpr float kSubBoth = 0.2f;        // ... its 2nd and 3rd harmonics within 14 dB of each other
-    static constexpr float kSubFundamental = 0.05f; // ... and its 1st 26 dB under them
-    static constexpr double kLowHz = 60.0;          // a pitch under this needs its fundamental there:
-    static constexpr float kLowFundamental = 0.35f; // within 9 dB of its 2nd to 4th harmonics
+    static constexpr double kSubCheckHz = 330.0;   // periods under this are checked for being notes' common period
+    static constexpr float kOwnFundamental = 0.03f; // a note's own fundamental: within 30 dB of its loudest harmonic
+    static constexpr int kHarmonics = 16;          // a triad on the high strings: the 10th, 12th and 15th
+    static constexpr int kEstablished = 10;        // estimates in a row (40 ms) with it: the note is established
+    static constexpr float kStrong = 0.25f;        // a harmonic within 12 dB of the loudest: a note there
 
     float at(int age) const { return fHistory[static_cast<size_t>((fWrite - 1 - age + 2 * kHistory) % kHistory)]; }
     float fullAt(int age) const
@@ -129,6 +154,31 @@ private:
         for (; j < n; ++j)
             sum += a[j] * b[j];
         return sum;
+    }
+
+    // The last `lag` samples against those `shift` before them: their difference relative to their energy
+    float differenceAt(int lag, int shift) const
+    {
+        double cross = 0.0, energy = 0.0;
+        for (int j = 0; j < lag; ++j)
+        {
+            const double a = at(j), b = at(j + shift);
+            cross += a * b;
+            energy += a * a + b * b;
+        }
+        return energy > 1e-20 ? static_cast<float>((energy - 2.0 * cross) / energy) : 1.0f;
+    }
+
+    // A long period (twice its lag is past the lags worked out): the signal repeats two periods back as well
+    bool repeatsAtTwice(int lag) const
+    {
+        if (3 * lag + 4 >= kHistory)
+            return true;
+        const float once = differenceAt(lag, lag);
+        float twice = 1.0f;
+        for (int shift = 2 * lag - 2; shift <= 2 * lag + 2; ++shift)
+            twice = std::min(twice, differenceAt(lag, shift));
+        return twice <= once + kRepeatMargin;
     }
 
     // The period at the full rate: the plain difference function over two periods, at lags around the decimated
@@ -202,26 +252,47 @@ private:
             running += d[static_cast<size_t>(lag)];
             d[static_cast<size_t>(lag)] = running > 0.0f ? d[static_cast<size_t>(lag)] * lag / running : 1.0f;
         }
-        // the first dip under the threshold (then down to its bottom); else the deepest dip. A dip under kLowHz
-        // (a bass, a 7-string's drop A) only with its fundamental there: strings left ringing together repeat at
-        // the lowest common period of their notes, which is often down there, with nothing at it.
-        int best = -1;
+        // The period is the shortest lag whose dip is nearly as deep as the deepest one (down to its bottom). YIN's
+        // fixed threshold took the half period of a low string whose fundamental is weak (the dip there is under
+        // it: a sustained low E played E3, wobbling) and, with nothing under it, the deepest dip anywhere.
+        // A period repeats at twice its lag too: a dip with none there is a blend of the harmonics' (a decaying low
+        // B's, 6% off its half period). And while the last pitch found still has its dip, a shorter lag must be as
+        // deep as the deepest to take over (a hammer-on an octave up; not the decay of the odd harmonics).
+        float deepest = 1.0f;
         for (int lag = fMinLag; lag < fMaxLag; ++lag)
+            deepest = std::min(deepest, d[static_cast<size_t>(lag)]);
+        const double lastLag = fHz > 0.0 && fVoiced && fSticky ? fRate / fHz : 0.0;
+        bool lastThere = false;
+        if (lastLag >= fMinLag && lastLag < fMaxLag - 1)
         {
-            if (d[static_cast<size_t>(lag)] < kThreshold)
-            {
-                while (lag + 1 < fMaxLag && d[static_cast<size_t>(lag + 1)] < d[static_cast<size_t>(lag)])
-                    ++lag;
-                best = lag;
-                break;
-            }
+            const int from = std::max(fMinLag, static_cast<int>(lastLag * 0.97)),
+                      to = std::min(fMaxLag - 1, static_cast<int>(lastLag * 1.03) + 1);
+            for (int lag = from; lag <= to; ++lag)
+                lastThere = lastThere || d[static_cast<size_t>(lag)] <= deepest + kDipMargin;
         }
-        if (best >= fLowLag && !fundamentalThere(best))
-            best = -1;
+        int best = -1;
+        for (int lag = fMinLag; lag < fMaxLag && best < 0; ++lag)
+        {
+            // (or simply deep: a bright string's dips get deeper at each multiple of its period)
+            const bool takeOver = lastThere && lag < 0.9 * lastLag;
+            if (d[static_cast<size_t>(lag)] > std::max(deepest + (takeOver ? kTakeOverMargin : kDipMargin), takeOver ? 0.0f : kDeep))
+                continue;
+            while (lag + 1 < fMaxLag && d[static_cast<size_t>(lag + 1)] < d[static_cast<size_t>(lag)])
+                ++lag;
+            // (twice the lag, give or take 2%)
+            const int from = static_cast<int>(1.96 * lag), to = static_cast<int>(2.04 * lag) + 1;
+            bool repeats = false;
+            if (to >= fMaxLag)
+                repeats = repeatsAtTwice(lag); // (past the lags worked out: just this one)
+            for (int twice = from; twice <= to && to < fMaxLag && !repeats; ++twice)
+                repeats = d[static_cast<size_t>(twice)] <= d[static_cast<size_t>(lag)] + kRepeatMargin;
+            if (repeats)
+                best = lag;
+        }
         if (best < 0)
         {
             best = fMinLag;
-            for (int lag = fMinLag; lag < fLowLag; ++lag)
+            for (int lag = fMinLag; lag < fMaxLag; ++lag)
                 if (d[static_cast<size_t>(lag)] < d[static_cast<size_t>(best)])
                     best = lag;
         }
@@ -229,8 +300,31 @@ private:
         fAperiodicity = d[static_cast<size_t>(best)];
         fVoiced = fAperiodicity < kVoicedLimit;
         if (!fVoiced)
+        {
+            if (++fUnvoicedRun >= kEstablished)
+                fOwnRun = 0;
             return false;
+        }
 
+        // The dip found may be at a half or a third of the true period, when a note's fundamental and odd harmonics
+        // have died away under its 2nd (a bass's low B after ten seconds): it's a blend of the harmonics' dips then,
+        // up to half a semitone off. A clearly deeper dip at twice or three times its lag is the period, and the
+        // pitch that share of it exactly.
+        int multiple = 1;
+        for (int m = 2; m <= 3 && multiple == 1; ++m)
+        {
+            const int from = static_cast<int>(0.96 * m * best), to = std::min(fMaxLag - 2, static_cast<int>(1.04 * m * best) + 1);
+            int deepestAt = -1;
+            for (int lag = from; lag <= to; ++lag)
+                if (deepestAt < 0 || d[static_cast<size_t>(lag)] < d[static_cast<size_t>(deepestAt)])
+                    deepestAt = lag;
+            if (deepestAt > from && deepestAt < to
+                && d[static_cast<size_t>(deepestAt)] < d[static_cast<size_t>(best)] - kTruePeriod)
+            {
+                best = deepestAt;
+                multiple = m;
+            }
+        }
         // parabolic refinement
         double lag = best;
         if (best > fMinLag && best < fMaxLag - 1)
@@ -241,12 +335,24 @@ private:
             if (denom > 0.0f)
                 lag += std::clamp(0.5 * (a - c) / denom, -0.5, 0.5);
         }
-        // a chord's notes (a power chord's root and fifth, an open chord's root, fifth and third) repeat together
-        // every two root periods, an octave below the root, with nothing there: then it's the root (owner's
-        // recordings: B1 under a B5, D2 under an open D)
-        if (fSampleRate / (lag * fDecimation) < kSubCheckHz && 2 * lag + 2 < kHistory && octaveBelowChord(lag))
-            lag *= 0.5;
-        fHz = fSampleRate / refine(lag);
+        // Notes that ring together repeat at their lowest common period, with no note there: a power chord an octave
+        // below its root, a third two octaves below. Then it's the lowest note that is there.
+        // (the period is refined first: the lowest note's is an exact share of it, its own dip isn't as sharp)
+        const double period = refine(lag);
+        // (a note that has had its fundamental for a while stays that note while its period holds: a low E's decays
+        // to 36 dB under its 2nd harmonic within seconds, by when nothing tells it from an E3 and a B3 ringing
+        // together but what came before)
+        const bool same = fHz > 0.0 && std::fabs(std::log2(fHz * period / fSampleRate)) < 1.0 / 24.0;
+        int harmonic = multiple;
+        if (multiple > 1 || (same && fOwnRun >= kEstablished))
+            ;
+        else if (fSampleRate / period < kSubCheckHz && 2 * lag + 2 < kHistory)
+            harmonic = lowestNoteThere(lag);
+        fOwnRun = harmonic > 1 ? 0 : same ? std::min(fOwnRun + 1, kEstablished) : 1;
+        fUnvoicedRun = 0;
+        fSticky = true;
+        fOwnPeriod = harmonic == 1;
+        fHz = fSampleRate * harmonic / period;
         return true;
     }
 
@@ -287,35 +393,35 @@ private:
         return mag;
     }
 
-    // The 2nd and 3rd harmonics both strong and the 1st nearly absent. A low string's own fundamental can be weak too,
-    // but rarely this weak (a synthetic pluck in PedalTests has its 23-26 dB under; on the owner's recordings 20 dB
-    // took a few more of the chords' octave-below notes away than 26 dB does).
-    bool octaveBelowChord(double lag) const
+    // A period that is one note's has that note's fundamental: on the owner's recordings (2026-11-09) never more than
+    // 23 dB under its loudest harmonic over the last two periods, the 7-string's low A and the bass's low B included,
+    // while notes ringing together have nothing at their common period (55 dB under or less: a fifth has its 2nd,
+    // 3rd and 4th harmonics, a fourth its 3rd and 4th, a major chord its 2nd to 6th). Returns which harmonic of the
+    // period is the lowest note there: 1 for a note of its own.
+    int lowestNoteThere(double lag) const
     {
-        const std::array<float, 3> mag = harmonics<3>(lag);
-        const float strong = std::max(mag[1], mag[2]);
-        return std::min(mag[1], mag[2]) > kSubBoth * strong && mag[0] < kSubFundamental * strong;
-    }
-
-    // A low note's fundamental: not far under its next three harmonics
-    bool fundamentalThere(int lag) const
-    {
-        const std::array<float, 4> mag = harmonics<4>(lag);
-        return mag[0] >= kLowFundamental * *std::max_element(mag.begin(), mag.end());
+        const std::array<float, kHarmonics> mag = harmonics<kHarmonics>(lag);
+        const float top = *std::max_element(mag.begin(), mag.end());
+        if (mag[0] >= kOwnFundamental * top)
+            return 1;
+        for (int h = 1; h < kHarmonics; ++h)
+            if (mag[static_cast<size_t>(h)] >= kStrong * top)
+                return h + 1;
+        return 1;
     }
 
     double fSampleRate = 48000.0;
     double fRate = 12000.0;
     int fDecimation = 4;
-    int fMinLag = 8, fMaxLag = 200, fLowLag = 200, fWindow = 200, fHop = 48;
+    int fMinLag = 8, fMaxLag = 200, fWindow = 200, fHop = 48;
     Biquad fHighPass;
     Biquad fAntiAlias[2];
     EnvelopeFollower fEnvelope;
     std::array<float, kHistory> fHistory {};
     int fWrite = 0;
     std::array<float, kFullHistory> fFull {};
-    std::array<float, kHistory> fRecent {};     // estimate()'s scratch: the newest samples, newest first,
-    std::array<double, kHistory + 1> fSquares {}; // the running sum of their squares,
+    std::array<float, 1024> fRecent {};     // estimate()'s scratch: the newest samples, newest first,
+    std::array<double, 1025> fSquares {}; // the running sum of their squares,
     std::array<float, kMaxLags> fDiff {};         // and the difference function
     int fFullWrite = 0;
     int fPhase = 0;
@@ -324,6 +430,10 @@ private:
     float fAperiodicity = 1.0f;
     bool fVoiced = false;
     uint32_t fEstimates = 0;
+    bool fOwnPeriod = true;
+    bool fSticky = false; // the last pitch found keeps its head start
+    int fOwnRun = 0;      // estimates in a row at the last pitch, each with its own fundamental
+    int fUnvoicedRun = 0; // estimates in a row without a clear pitch
 };
 
 } // namespace xythos

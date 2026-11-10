@@ -319,10 +319,18 @@ TEST_CASE("the note tracker plays the benchmark's notes with few wrong or phanto
     // the scores before the note tracker (the pitch tracker and the Pick Filter, off): 165 wrong-pitch stretches,
     // 56 phantom ones (6.7 s), 1 missed note. Since the chirp rules (doubtful pitches need a third estimate,
     // 2026-10-24): 25 wrong, 4 missed (one more in the ringing arpeggio, where the strings left ringing blur it).
+    // Since the pitch tracker's rework on the owner's 7-string and bass recordings (2026-11-09; PitchTracker.hpp): 10
+    // missed and 37 wrong (3.0 s), 9 of the missed and 2.5 s of the wrong in the ringing arpeggio: with strings left
+    // ringing the pitch is now the lowest note there (as for a chord), so a note picked above it isn't found. Without
+    // that scene 1 missed and 27 wrong (0.5 s), and single notes are found in 12 ms with none wrong (was 2). On the
+    // recordings, which count: 4.4% of the notes' time missing, was 25%.
     const std::vector<Score> clean = bench("note tracker", noteTracker(0.0f, 0.0, false), false, false, false);
     const Score& total = clean.back();
-    CHECK(total.missed <= 4);
-    CHECK(total.wrong <= 30);
+    CHECK(total.missed <= 10);
+    CHECK(total.missed - clean[3].missed <= 1); // (all but the ringing arpeggio's)
+    CHECK(total.wrong <= 38);
+    CHECK(total.wrong - clean[3].wrong <= 28);
+    CHECK(clean[0].wrong == 0); // single notes
     CHECK(total.phantom <= 20);
     CHECK(total.phantomMs <= 200.0);
     CHECK(clean[0].medianDelayMs <= 14.0); // single notes
@@ -335,7 +343,7 @@ TEST_CASE("the note tracker plays the benchmark's notes with few wrong or phanto
     const std::vector<Score> ahead = bench("note tracker, lookahead 15 ms", noteTracker(0.0f, 15.0, false), false, false, false);
     CHECK(ahead[0].medianDelayMs <= 4.0);
     CHECK(ahead.back().wrong <= total.wrong);
-    CHECK(ahead.back().missed <= 4);
+    CHECK(ahead.back().missed <= 10);
 }
 
 TEST_CASE("the note tracker plays a 5-string bass down to its low B")
@@ -421,8 +429,8 @@ TEST_CASE("pitch-following blocks: lookahead delays the dry signal by the latenc
         auto block = testing::createWithDefaults(*type, guitar::kRate);
         CHECK(block->latency() == 0);
         REQUIRE(block->configure({ { "lookahead", 15.0 } }));
-        // 720 samples (the poly chip works in hops of 32)
-        CHECK(std::abs(static_cast<int>(block->latency()) - 720) <= 16);
+        // 720 samples (the poly chip works in whole hops of 5.3 ms)
+        CHECK(std::abs(static_cast<int>(block->latency()) - 720) <= 128);
         for (int p = 0; p < type->numParams; ++p)
             block->setParam(p, type->params[static_cast<size_t>(p)].def);
         dryOnly(*type, *block);

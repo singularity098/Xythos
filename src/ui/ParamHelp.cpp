@@ -2441,8 +2441,8 @@ constexpr TypeHelp kTypeHelp[] = {
       "first in the chain." },
     { "polychip",
       "A polyphonic 8-bit synth: it hears every note you play, chords included, and plays each one as a pulse or "
-      "triangle voice snapped to the semitone, or arpeggiates the chord. Low notes take a moment longer to speak "
-      "than in the mono synths. Play cleanly and put it first in the chain." },
+      "triangle voice snapped to the semitone, or arpeggiates the chord. Single notes speak as fast as in the mono "
+      "synths; a chord's notes take a moment longer, the low ones last. Play cleanly and put it first in the chain." },
     { "theremin",
       "A theremin: a pure, singing tone that glides along your pitch without starting each note afresh, so slides, "
       "bends and vibrato become eerie theremin swoops, with an old instrument's wobble. Play slow single-note "
@@ -2526,7 +2526,7 @@ constexpr TypeHelp kTypeHelp[] = {
     { "midiout",
       "Turns your playing into MIDI notes, to play a synth or sampler plugin from your guitar. In Reaper, put the "
       "synth after Xythos in the same FX chain (it receives the notes), or send the track's MIDI to another track. "
-      "It follows single notes, with pitch bend. Lookahead makes the notes start on time." },
+      "Mono follows single notes with pitch bend; Poly sends chords. Lookahead makes the notes start on time." },
     { "fart",
       "Plays a fart at the pitch of every note you pick: thirteen kinds, from a tiny squeak to a motorboat, or a "
       "random one each time. Because why not. Play single notes; an octave down sounds best." },

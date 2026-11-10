@@ -318,27 +318,39 @@ TEST_CASE("midi out sends from the pick with lookahead")
     CHECK(at < 104.0);
 }
 
-TEST_CASE("midi out: Poly mode is deactivated, the block sends Mono")
+TEST_CASE("midi out (poly) sends the notes of a chord, and ends them")
 {
-    // owner, 2026-11-08: Mode is ignored, so a project saved with Poly sends what Mono sends
-    auto mono = midiOut();
-    auto poly = midiOut();
-    poly->setParam(kMidiOutParamMode, 1.0f);
+    auto block = midiOut();
+    block->setParam(kMidiOutParamMode, 1.0f);
+    // A major, strummed: A2 E3 A3 C#4 E4 (the octave doublings may count as overtones)
     std::vector<guitar::Note> chord;
     const int notes[] = { 45, 52, 57, 61, 64 };
     for (int k = 0; k < 5; ++k)
         chord.push_back(pick(notes[k], 0.1 + 0.012 * k, 0.8 - 0.012 * k, k + 1));
     const auto p = play(chord, 1.5);
-    std::vector<std::vector<float>> x = { p.signal }, y = { p.signal };
-    const auto a = runMidi(*mono, x), b = runMidi(*poly, y);
-    REQUIRE(a.size() == b.size());
-    for (size_t i = 0; i < a.size(); ++i)
+    std::vector<std::vector<float>> x = { p.signal };
+    const auto sent = runMidi(*block, x);
+    const auto ons = only(sent, 0x90), offs = only(sent, 0x80);
+    std::vector<int> played;
+    for (const Sent& s : ons)
+        played.push_back(s.a);
+    CAPTURE(played.size());
+    // the root, the third and the fifth are all sent, and nothing but the chord's notes and their harmonics (up to
+    // the 8th: a strummed string's harmonics show before its fundamental has settled, and can pass for notes for a
+    // moment)
+    for (const int n : { 45, 52, 61 })
+        CHECK(std::count(played.begin(), played.end(), n) >= 1);
+    for (const int n : played)
     {
-        CHECK(a[i].time == b[i].time);
-        CHECK(a[i].status == b[i].status);
-        CHECK(a[i].a == b[i].a);
-        CHECK(a[i].b == b[i].b);
+        bool known = false;
+        for (const int c : notes)
+            for (const int harmonic : { 0, 12, 19, 24, 28, 31, 34, 36 })
+                known = known || n == c + harmonic;
+        CAPTURE(n);
+        CHECK(known);
     }
+    // every note that went on went off again
+    CHECK(offs.size() == ons.size());
 }
 
 

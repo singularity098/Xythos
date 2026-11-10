@@ -37,7 +37,7 @@ public:
         fSampleRate = sampleRate;
         fMix.prepare(sampleRate);
         fFinder.prepare(sampleRate);
-        fAttackCoef = 1.0f - EnvelopeFollower::coef(sampleRate, 1.0);
+        fAttackCoef = 1.0f - EnvelopeFollower::coef(sampleRate, 3.0); // (the notes come in 5 ms hops)
         updateRelease();
         const auto maxDelay = static_cast<size_t>(std::ceil(PolyNoteFinder::kMaxLookaheadMs / 1000.0 * sampleRate)) + 64;
         for (std::vector<float>& line : fDryLines)
