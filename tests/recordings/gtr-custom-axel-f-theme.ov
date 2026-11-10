@@ -1,0 +1,12 @@
+# The open D3 string rings along at -10 dB under the high notes, and the C#4 is left ringing under the F#4: the
+# analysis takes their common period. What's played is the melody's note.
+set 4.110 4.430 C#4
+set 4.445 4.480 F#3 ?C#4
+set 4.850 5.080 D4
+set 5.095 5.330 C#4
+set 5.350 5.590 A3
+set 5.610 5.640 F#3 ?A3
+set 6.080 6.100 *
+set 6.100 6.305 F#4
+set 6.320 6.335 F#3 ?F#4
+set 6.335 6.345 F#3

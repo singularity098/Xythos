@@ -34,6 +34,12 @@ namespace xythos {
 //   ringing together, a power chord's an octave below its root: the pitch is then the lowest note that is there. A
 //   note that has had its fundamental for 40 ms stays that note while its period holds, whatever becomes of the
 //   fundamental (a low E's falls to 36 dB under its 2nd harmonic within seconds).
+// - Notes ringing together (owner's Axel F theme, 2026-11-10: the open D3 string rang along 10 dB under a picked C#4
+//   and D4, and a C#4 left ringing 8 dB under the F#4 picked after it; the common period, an octave or two below,
+//   played C#3, D3 and F#2): a note found since the last pick stays that note when the period becomes one an octave
+//   or more below, while it's still among the loudest there (not under 60 Hz: a low string's first few ms read an
+//   octave up). And when a period's notes are clearly unequal (one's harmonics 4 dB or more under another's), the
+//   louder one is the pitch, not the lowest.
 class PitchTracker {
 public:
     static constexpr double kMinHz = 25.0;
@@ -71,7 +77,7 @@ public:
         fHz = 0.0;
         fAperiodicity = 1.0f;
         fVoiced = false;
-        fOwnRun = fUnvoicedRun = 0;
+        fOwnRun = fUnvoicedRun = fHeldRun = 0;
         fSticky = false;
     }
 
@@ -112,6 +118,7 @@ public:
     {
         fSticky = false;
         fOwnRun = 0;
+        fHeldRun = 0;
     }
 
     // The last pitch found is the signal's own period: one note. False for the lowest of notes ringing together.
@@ -135,6 +142,10 @@ private:
     static constexpr int kHarmonics = 16;          // a triad on the high strings: the 10th, 12th and 15th
     static constexpr int kEstablished = 10;        // estimates in a row (40 ms) with it: the note is established
     static constexpr float kStrong = 0.25f;        // a harmonic within 12 dB of the loudest: a note there
+    static constexpr float kLouder = 0.4f;         // a note there whose harmonics have under this share of another's
+                                                   // energy (4 dB) is the quieter one
+    static constexpr int kHeld = 3;                // estimates (12 ms) at a pitch since the pick: it stays the note
+    static constexpr double kHeldMinHz = 60.0;     // ... in a period over this
 
     float at(int age) const { return fHistory[static_cast<size_t>((fWrite - 1 - age + 2 * kHistory) % kHistory)]; }
     float fullAt(int age) const
@@ -347,12 +358,14 @@ private:
         if (multiple > 1 || (same && fOwnRun >= kEstablished))
             ;
         else if (fSampleRate / period < kSubCheckHz && 2 * lag + 2 < kHistory)
-            harmonic = lowestNoteThere(lag);
+            harmonic = lowestNoteThere(lag, period);
+        const double hz = fSampleRate * harmonic / period;
+        fHeldRun = fHz > 0.0 && std::fabs(std::log2(hz / fHz)) < 1.0 / 24.0 ? fHeldRun + 1 : 1;
         fOwnRun = harmonic > 1 ? 0 : same ? std::min(fOwnRun + 1, kEstablished) : 1;
         fUnvoicedRun = 0;
         fSticky = true;
         fOwnPeriod = harmonic == 1;
-        fHz = fSampleRate * harmonic / period;
+        fHz = hz;
         return true;
     }
 
@@ -398,15 +411,38 @@ private:
     // while notes ringing together have nothing at their common period (55 dB under or less: a fifth has its 2nd,
     // 3rd and 4th harmonics, a fourth its 3rd and 4th, a major chord its 2nd to 6th). Returns which harmonic of the
     // period is the lowest note there: 1 for a note of its own.
-    int lowestNoteThere(double lag) const
+    int lowestNoteThere(double lag, double period) const
     {
         const std::array<float, kHarmonics> mag = harmonics<kHarmonics>(lag);
         const float top = *std::max_element(mag.begin(), mag.end());
+        // The note found since the pick, a harmonic of this period and still among its loudest: it stays the note.
+        // The period is its and another note's ringing along (an open string, the note before); what's played is
+        // the one found first. (Not on the lowest strings: a bass's first few ms read an octave up.)
+        if (fSticky && fHeldRun >= kHeld && fHz > 0.0 && fSampleRate / period >= kHeldMinHz)
+        {
+            const double ratio = fHz * period / fSampleRate;
+            const int k = static_cast<int>(std::lround(ratio));
+            if (k >= 2 && k <= 4 && std::fabs(std::log2(ratio / k)) < 1.0 / 24.0
+                && mag[static_cast<size_t>(k - 1)] >= kStrong * top)
+                return k;
+        }
         if (mag[0] >= kOwnFundamental * top)
             return 1;
-        for (int h = 1; h < kHarmonics; ++h)
-            if (mag[static_cast<size_t>(h)] >= kStrong * top)
-                return h + 1;
+        // The lowest note there, unless another is clearly louder (a note picked over one left ringing): each
+        // note's level is its harmonics' energy (those of a power chord's root and fifth are close)
+        auto series = [&](int h) {
+            double e = 0.0;
+            for (int j = h; j <= kHarmonics; j += h)
+                e += static_cast<double>(mag[static_cast<size_t>(j - 1)]) * mag[static_cast<size_t>(j - 1)];
+            return e;
+        };
+        double loudest = 0.0;
+        for (int h = 2; h <= kHarmonics; ++h)
+            if (mag[static_cast<size_t>(h - 1)] >= kStrong * top)
+                loudest = std::max(loudest, series(h));
+        for (int h = 2; h <= kHarmonics; ++h)
+            if (mag[static_cast<size_t>(h - 1)] >= kStrong * top && series(h) >= kLouder * loudest)
+                return h;
         return 1;
     }
 
@@ -433,6 +469,7 @@ private:
     bool fOwnPeriod = true;
     bool fSticky = false; // the last pitch found keeps its head start
     int fOwnRun = 0;      // estimates in a row at the last pitch, each with its own fundamental
+    int fHeldRun = 0;     // estimates in a row at the last pitch, since the last pick
     int fUnvoicedRun = 0; // estimates in a row without a clear pitch
 };
 
