@@ -1176,7 +1176,7 @@ int droneRoot(const float weights[12])
 }
 
 #define TRACKED_SYNTH_TAIL                                                                                             \
-    -1, -1, false, nullptr, 24.0f, MeterStyle::Reduction, true
+    -1, -1, false, nullptr, 24.0f, MeterStyle::Reduction, true, false, false, true
 
 #define PICK_FILTER_AND_TRACK                                                                                          \
     ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },                                          \
@@ -1199,7 +1199,7 @@ const BlockDescriptor kThereminBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new ThereminBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<ThereminBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1221,7 +1221,7 @@ const BlockDescriptor kSyncLeadBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new SyncLeadBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<SyncLeadBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1244,7 +1244,7 @@ const BlockDescriptor kPdSynthBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new PdSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<PdSynthBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1266,7 +1266,7 @@ const BlockDescriptor kWavetableBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new WavetableBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<WavetableBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1289,7 +1289,7 @@ const BlockDescriptor kSubBassBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new SubBassBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<SubBassBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1310,7 +1310,7 @@ const BlockDescriptor kLaserBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new LaserBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<LaserBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1331,7 +1331,7 @@ const BlockDescriptor kDroneBlockDescriptor = {
         ParamSpec { "Level", "%", 0.0f, 100.0f, 50.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new DroneBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<DroneBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 
@@ -1354,7 +1354,7 @@ const BlockDescriptor kHarmonicPainterBlockDescriptor = {
         ParamSpec { "Mix", "%", 0.0f, 100.0f, 100.0f, ParamScale::Linear },
         PICK_FILTER_AND_TRACK,
     },
-    [] { return std::unique_ptr<Block>(new HarmonicPainterBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<HarmonicPainterBlock>()); },
     TRACKED_SYNTH_TAIL,
 };
 

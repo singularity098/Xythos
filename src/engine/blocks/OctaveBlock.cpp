@@ -204,6 +204,9 @@ const BlockDescriptor kOctaveBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 } // namespace xythos

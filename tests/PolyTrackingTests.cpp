@@ -2,7 +2,7 @@
 // Copyright (c) 2026 singularity098
 
 // The polyphonic tracking benchmark: the synthetic guitar (GuitarSignals.hpp) playing chords, riffs and single notes
-// into the note finder of the Poly Chip and the MIDI Out's Poly mode (dsp/PolyNoteFinder.hpp), counting the notes it
+// into the note finder of the pedals' Poly tracking and the MIDI Out's Poly mode (dsp/PolyNoteFinder.hpp), counting the notes it
 // misses, the notes it plays that weren't played, how late notes start, and notes that drop out while held.
 
 #include "GuitarSignals.hpp"
@@ -23,7 +23,7 @@ namespace {
 
 using Notes = std::bitset<128>; // one bit per band (MIDI note - PolyNoteFinder::kFirstNote)
 
-constexpr float kAudible = 0.01f; // a voice's level (band level x 5, as the Poly Chip plays it)
+constexpr float kAudible = 0.01f; // a voice's level (band level x 5, as the old Poly Chip played it)
 
 struct PolyScene {
     const char* name;

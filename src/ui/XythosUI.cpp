@@ -172,6 +172,12 @@ constexpr const char* kQualityHelp =
     "pedal's sound comes about 150 ms late (more than you can play against live; your DAW makes up for it on "
     "playback and recording) and it uses more CPU. Shimmer and Pitch Delay hide the delay inside their tails and "
     "repeats, so in them HQ adds none (Pitch Delay's shortest repeats become about 150 ms). Click to switch.";
+constexpr const char* kTrackingHelp =
+    "How this pedal hears your notes. Mono (the default) follows single notes: it's the fastest and surest, and "
+    "chords confuse it. Poly hears every note of a chord: the synths give each note its own voice (up to six), and "
+    "the other pedals follow the chord's lowest note (Hard Tune tunes the whole chord at once). A chord's notes take "
+    "a moment longer to be found than a single note, the low ones last, and fast palm-muted chugs can slip through. "
+    "Click to switch.";
 constexpr float kTunerInTuneCents = 2.0f;
 
 // How long the audio engine gets to start a changed chain before the UI reports blocks that aren't running
@@ -216,6 +222,7 @@ enum class Hit {
     A2Size,       // index = position in the chain
     Lookahead,    // index = position in the chain: a menu of the lookaheads
     Quality,      // index = position in the chain: toggles the "hq" config
+    Tracking,     // index = position in the chain: toggles the "poly" config (Mono or Poly)
     Choice,       // index = host parameter; click opens a menu of the choices
     InClip,
     OutClip,
@@ -790,6 +797,7 @@ protected:
             fGotChainState = value[0] != '\0';
             fChain = std::move(*chain);
             retireLoopersFromHost();
+            retirePolyChipsFromHost();
             fMigratedSlots = migrateBlocks(fChain);
             fSavedChain = fChain; // the host's state: nothing to mark as modified, nothing to undo
             fUndo.clear();
@@ -1569,6 +1577,14 @@ protected:
             return true;
         }
 
+        case Hit::Tracking: {
+            beginEdit();
+            nlohmann::json& config = fChain.blocks[hit->index].config;
+            config["poly"] = !polyFromConfig(config);
+            sendChain();
+            return true;
+        }
+
         case Hit::Lookahead: {
             fMenuTile = hit->index;
             fMenuParam = kNoParam;
@@ -2030,6 +2046,19 @@ protected:
                     setValue(looperParam(p), settings[static_cast<size_t>(p)]);
             sendChain();
             showToast("The looper has moved to the top bar (∞); this project's Looper block settings went with it.");
+        }
+        if (!fRetiredPolyChips.empty())
+        {
+            const std::vector<int> slots = std::exchange(fRetiredPolyChips, {});
+            for (const BlockState& block : fChain.blocks)
+            {
+                if (std::find(slots.begin(), slots.end(), block.slot) == slots.end())
+                    continue;
+                for (int p = 0; p < kParamsPerSlot; ++p)
+                    setHostParameter(slotParam(block.slot, p), block.params[p]);
+            }
+            sendChain();
+            showToast("The Poly Chip is gone: this project's is a Chip Synth with Tracking set to Poly now.");
         }
         if (!fMigratedSlots.empty())
         {
@@ -2643,11 +2672,23 @@ private:
         }
     }
 
+    // A chain from the host had Poly Chip blocks (removed): they're Chip Synths in Poly now, and the host gets their
+    // controls and the DSP the chain in the idle callback
+    void retirePolyChipsFromHost()
+    {
+        std::vector<int> slots = retirePolyChips(fChain);
+        if (slots.empty())
+            return;
+        fRetiredPolyChips.insert(fRetiredPolyChips.end(), slots.begin(), slots.end());
+        fSavedChain = fChain;
+    }
+
     // Replaces the chain (undo, redo, presets): the host gets every block's values back. A preset's Looper block
     // is left out; the global looper keeps its own settings.
     void applyChain(ChainState chain, bool restoreLatches = false)
     {
         retireLoopers(chain);
+        retirePolyChips(chain);
         migrateBlocks(chain);
         fChain = std::move(chain);
         for (const BlockState& block : fChain.blocks)
@@ -2852,7 +2893,7 @@ private:
     void openPreset(const std::string& path)
     {
         std::string error;
-        const std::optional<LoadedPreset> loaded = loadPresetFile(path, [this](const std::string& hash) {
+        std::optional<LoadedPreset> loaded = loadPresetFile(path, [this](const std::string& hash) {
             for (const auto* library : { &fNamLibrary, &fIrLibrary })
             {
                 for (const LibraryEntry& entry : *library)
@@ -2863,6 +2904,8 @@ private:
             }
             return std::string();
         }, &error);
+        if (loaded)
+            retirePolyChips(loaded->preset.chain);
         if (!loaded || !loaded->preset.chain.validate(BlockRegistry::builtin(), &error))
         {
             showToast("Couldn't open the preset: " + error);
@@ -4763,6 +4806,7 @@ private:
         {
             fChain = std::move(*chain);
             retireLoopersFromHost();
+            retirePolyChipsFromHost();
             fMigratedSlots = migrateBlocks(fChain);
             fSavedChain = fChain;
             fUndo.clear();
@@ -5474,6 +5518,8 @@ private:
             return { "A2 Full/Lite", kA2SizeHelp };
         case Hit::Quality:
             return { "Quality", kQualityHelp };
+        case Hit::Tracking:
+            return { "Tracking", kTrackingHelp };
         case Hit::CabImage:
             if (hit.index >= 0 && hit.index < static_cast<int>(fChain.blocks.size()) && isNamAmp(fChain.blocks[hit.index]))
                 return { "Amp Image",
@@ -8528,7 +8574,7 @@ private:
             return;
 
         // The controls: one cell each, plus block-specific extras
-        enum class Cell { Param, A2Size, Lookahead, Quality, Meter };
+        enum class Cell { Param, A2Size, Lookahead, Quality, Tracking, Meter };
         struct Control {
             Cell cell;
             int param;
@@ -8561,6 +8607,8 @@ private:
         }
         if (type->hq)
             controls.push_back({ Cell::Quality, 0 });
+        if (type->poly)
+            controls.push_back({ Cell::Tracking, 0 });
         if (type->lookahead)
             controls.push_back({ Cell::Lookahead, 0 });
         if (type->meterName)
@@ -8714,6 +8762,14 @@ private:
                 label(cx, cy - 26.0f, "Quality", theme::textDim, 12.0f, ALIGN_CENTER | ALIGN_MIDDLE);
                 drawButton({ cx - 42.0f, cy - 14.0f, 84.0f, 28.0f }, hq ? "HQ" : "Standard", hq, theme::accent,
                            Hit::Quality, fSelected);
+                continue;
+            }
+            if (control.cell == Cell::Tracking)
+            {
+                const bool poly = polyFromConfig(block.config);
+                label(cx, cy - 26.0f, "Tracking", theme::textDim, 12.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+                drawButton({ cx - 42.0f, cy - 14.0f, 84.0f, 28.0f }, poly ? "Poly" : "Mono", poly, theme::accent,
+                           Hit::Tracking, fSelected);
                 continue;
             }
             if (control.cell == Cell::Lookahead)
@@ -10519,6 +10575,7 @@ private:
     uint32_t fLooperSaveRequest = 0;
     bool fLooperSavePending = false;
     std::chrono::steady_clock::time_point fLooperSaveAt {};
+    std::vector<int> fRetiredPolyChips; // slots of a project's Poly Chips, now Chip Synths: their controls go to the host
     std::optional<LooperSettings> fRetiredLooper; // a project's Looper block's settings, for the global looper
     // the loop's waveform as the DSP streams it (looperOutput()): a lane per pass, of the loop of generation
     // fLooperGeneration (-1 before the state arrives)

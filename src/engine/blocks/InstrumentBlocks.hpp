@@ -7,7 +7,8 @@
 
 namespace xythos {
 
-// Instruments played from your notes (blocks/TrackedSynth.hpp: single notes, Track and Lookahead as in the synths).
+// Instruments played from your notes (blocks/TrackedSynth.hpp: single notes, or chords in Poly; Track and Lookahead
+// as in the synths).
 // Everything is synthesized in code.
 
 // Fart: every pick plays a fart at your note (an octave down by default). Thirteen kinds, from a squeaker to a

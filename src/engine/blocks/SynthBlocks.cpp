@@ -636,7 +636,7 @@ const BlockDescriptor kSuperSawBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new SuperSawBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<SuperSawBlock>()); },
     -1,
     -1,
     false,
@@ -644,6 +644,9 @@ const BlockDescriptor kSuperSawBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kFmSynthBlockDescriptor = {
@@ -665,7 +668,7 @@ const BlockDescriptor kFmSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new FmSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<FmSynthBlock>()); },
     -1,
     -1,
     false,
@@ -673,6 +676,9 @@ const BlockDescriptor kFmSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kFoldSynthBlockDescriptor = {
@@ -693,7 +699,7 @@ const BlockDescriptor kFoldSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new FoldSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<FoldSynthBlock>()); },
     -1,
     -1,
     false,
@@ -701,6 +707,9 @@ const BlockDescriptor kFoldSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kAcidSynthBlockDescriptor = {
@@ -722,7 +731,7 @@ const BlockDescriptor kAcidSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new AcidSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<AcidSynthBlock>()); },
     -1,
     -1,
     false,
@@ -730,6 +739,9 @@ const BlockDescriptor kAcidSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kStringSynthBlockDescriptor = {
@@ -750,7 +762,7 @@ const BlockDescriptor kStringSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new StringSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<StringSynthBlock>()); },
     -1,
     -1,
     false,
@@ -758,6 +770,9 @@ const BlockDescriptor kStringSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 const BlockDescriptor kChipSynthBlockDescriptor = {
@@ -777,7 +792,7 @@ const BlockDescriptor kChipSynthBlockDescriptor = {
         ParamSpec { "Pick Filter", "ms", 0.0f, 60.0f, 0.0f, ParamScale::Linear },
         ParamSpec { "Track", "", 0.0f, 1.0f, 1.0f, ParamScale::Choice, TrackedInput::kTrackNames },
     },
-    [] { return std::unique_ptr<Block>(new ChipSynthBlock()); },
+    [] { return std::unique_ptr<Block>(new Voiced<ChipSynthBlock>()); },
     -1,
     -1,
     false,
@@ -785,6 +800,9 @@ const BlockDescriptor kChipSynthBlockDescriptor = {
     24.0f,
     MeterStyle::Reduction,
     true,
+    false,
+    false,
+    true, // poly
 };
 
 } // namespace xythos

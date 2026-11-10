@@ -390,7 +390,7 @@ inline RealScore score(const Clip& clip, const std::vector<Notes>& out, size_t l
 // A tracker under test: fills `out` with the notes sounding at each sample; returns its latency
 using RealTracker = std::function<size_t(const std::vector<float>&, std::vector<Notes>&)>;
 
-constexpr float kAudible = 0.01f; // a voice's level (band level x 5, as the Poly Chip plays it)
+constexpr float kAudible = 0.01f; // a voice's level (band level x 5, as the old Poly Chip played it)
 constexpr float kRealGate = 0.03f; // the recordings are DI, about 30 dB quieter than the synthetic guitar
 
 // Hiss and mains hum (60 Hz and its 3rd harmonic), each at `level` (RMS of the hiss, peak of the hum), as a live

@@ -5,6 +5,7 @@
 
 #include "engine/blocks/LooperBlock.hpp"
 #include "engine/blocks/NamBlock.hpp"
+#include "engine/blocks/SynthBlocks.hpp"
 
 namespace xythos {
 
@@ -69,6 +70,67 @@ std::optional<LooperSettings> retireLoopers(ChainState& chain)
         chain.remove(i);
     }
     return settings;
+}
+
+std::vector<int> retirePolyChips(ChainState& chain)
+{
+    // the Poly Chip's controls, in its slot order, and where each went on the Chip Synth (-1: gone)
+    constexpr int kWent[] = {
+        kChipParamWave,       // Wave
+        -1,                   // Voices
+        -1,                   // Focus
+        -1,                   // Arp (Off, Up, Down: not the Chip Synth's)
+        -1,                   // Arp Rate
+        -1,                   // Release
+        kChipParamCrush,      // Crush
+        kChipParamOctave,     // Octave
+        kChipParamMix,        // Mix
+        kChipParamQuantize,   // Quantize
+        kChipParamPickFilter, // Pick Filter
+        kChipParamTrack,      // Track
+    };
+    constexpr int kOldCount = static_cast<int>(sizeof(kWent) / sizeof(kWent[0]));
+    const BlockDescriptor& chip = kChipSynthBlockDescriptor;
+    std::vector<int> changed;
+    for (BlockState& block : chain.blocks)
+    {
+        if (block.typeId != kRetiredPolyChipType)
+            continue;
+        std::array<float, kParamsPerSlot> params {};
+        for (int p = 0; p < chip.numParams; ++p)
+        {
+            const ParamSpec& spec = chip.params[static_cast<size_t>(p)];
+            params[static_cast<size_t>(p)] = spec.toNormalized(spec.def);
+        }
+        params[kChipParamVibrato] = chip.params[kChipParamVibrato].toNormalized(0.0f);
+        for (int p = 0; p < kOldCount; ++p)
+            if (kWent[p] >= 0)
+                params[static_cast<size_t>(kWent[p])] = block.params[static_cast<size_t>(p)];
+        block.params = params;
+        block.typeId = chip.typeId;
+        if (!block.config.is_object())
+            block.config = nlohmann::json::object();
+        block.config["poly"] = true;
+        block.latched = 0;
+        // MIDI mappings follow the controls; ones to controls that went go too
+        for (size_t m = chain.midi.size(); m-- > 0;)
+        {
+            MidiMapping& mapping = chain.midi[m];
+            for (int p = 0; p < kParamsPerSlot; ++p)
+            {
+                if (mapping.param != slotParam(block.slot, p))
+                    continue;
+                const int to = p < kOldCount ? kWent[p] : -1;
+                if (to >= 0)
+                    mapping.param = slotParam(block.slot, to);
+                else
+                    chain.midi.erase(chain.midi.begin() + static_cast<std::ptrdiff_t>(m));
+                break;
+            }
+        }
+        changed.push_back(block.slot);
+    }
+    return changed;
 }
 
 } // namespace xythos

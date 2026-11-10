@@ -10,7 +10,8 @@ namespace xythos {
 // More guitar synths. Like the Synth block, each follows the played note (single notes, dsp/NoteTracker.hpp) and
 // takes its loudness from your playing, with its own Attack and Release. Each has its own
 // sound engine, then a Pick Filter and Track (from the block's input or the rig's) as its last two controls. Config:
-// "lookahead" (ms, 0 by default; blocks/TrackedInput.hpp), which adds that much latency.
+// "lookahead" (ms, 0 by default; blocks/TrackedInput.hpp), which adds that much latency, and "poly" (Tracking: Mono,
+// the default, or Poly, where every note of a chord gets its own voice; blocks/TrackedSynth.hpp).
 
 // Super Saw: seven detuned saws spread across the stereo field (the trance lead and big pad sound), through a
 // low-pass that opens with your playing.

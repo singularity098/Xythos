@@ -59,7 +59,8 @@ enum PolyOctaveParam {
 
 // Harmonizer: one or two voices a scale interval away from the played note, in a key and scale, so a "third above"
 // is major or minor as the scale needs. It follows single notes (dsp/PitchTracker.hpp) to know the note; the
-// shifting itself works on anything. Notes outside the scale use their nearest scale note's interval.
+// shifting itself works on anything. Notes outside the scale use their nearest scale note's interval. In Poly tracking
+// (config "poly"; blocks/TrackedInput.hpp) the intervals come from the chord's lowest note.
 extern const BlockDescriptor kHarmonizerBlockDescriptor;
 
 enum HarmonizerParam {

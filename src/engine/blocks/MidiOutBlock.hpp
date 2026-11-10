@@ -11,7 +11,7 @@ namespace xythos {
 // FX chain). Mono follows single notes (dsp/NoteTracker.hpp): a note on at each note's start, at a velocity from
 // how hard it was picked (Dynamics), a note off when it ends, and pitch bend for bends and vibrato (Bend: the range
 // the synth is set to; Off sends plain notes). Poly finds the notes of chords (dsp/PolyNoteFinder.hpp: Focus and
-// the Pick Filter as in the Poly Chip, at least 15 ms), without bend. Channel, Octave and Transpose shift what is
+// the Pick Filter, at least 15 ms; it has no Tracking button: Mode is its own), without bend. Channel, Octave and Transpose shift what is
 // sent; Audio passes the guitar on or mutes it. Track and Lookahead as in the synths: with lookahead, the notes are
 // sent from their picks, in time with the (delayed) audio. The engine ends a bypassed or removed block's notes.
 extern const BlockDescriptor kMidiOutBlockDescriptor;

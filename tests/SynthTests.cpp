@@ -7,7 +7,8 @@
 #include <doctest/doctest.h>
 
 #include "TestSupport.hpp"
-#include "engine/blocks/PolyChipBlock.hpp"
+#include "engine/BlockRegistry.hpp"
+#include "engine/blocks/MoreSynthBlocks.hpp"
 #include "engine/blocks/SynthBlock.hpp"
 #include "engine/blocks/SynthBlocks.hpp"
 #include "engine/dsp/Biquad.hpp"
@@ -97,7 +98,7 @@ TEST_CASE("every synth plays the note you play, and an octave down when asked")
 {
     for (const BlockDescriptor* type : { &kSuperSawBlockDescriptor, &kFmSynthBlockDescriptor, &kFoldSynthBlockDescriptor,
                                          &kAcidSynthBlockDescriptor, &kStringSynthBlockDescriptor,
-                                         &kChipSynthBlockDescriptor, &kPolyChipBlockDescriptor })
+                                         &kChipSynthBlockDescriptor })
     {
         const std::string typeId = type->typeId;
         CAPTURE(typeId);
@@ -257,7 +258,8 @@ TEST_CASE("chip synth snaps to semitones and arpeggiates")
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Poly Chip
+// Poly tracking (the "poly" config; owner, 2026-11-10: in place of the Poly Chip): every note of a chord gets a voice.
+// The Chip Synth in Poly is tested the way the Poly Chip was.
 
 namespace {
 
@@ -277,12 +279,23 @@ std::vector<std::vector<float>> chord(const std::vector<double>& notes, size_t l
     return x;
 }
 
+std::unique_ptr<Block> makePoly(const BlockDescriptor& type)
+{
+    auto block = make(type);
+    block->configure(nlohmann::json { { "poly", true } });
+    return block;
+}
+
+// The Chip Synth in Poly with a square (no even harmonics of its own), no crush or vibrato, notes snapped to
+// semitones (off by default) and the Poly Chip's Pick Filter (15 ms)
 std::unique_ptr<Block> polyChip()
 {
-    auto block = make(kPolyChipBlockDescriptor);
-    block->setParam(kPolyChipParamWave, 2.0f); // a square: no even harmonics of its own
-    block->setParam(kPolyChipParamCrush, 0.0f);
-    block->setParam(kPolyChipParamQuantize, 1.0f); // (off by default)
+    auto block = makePoly(kChipSynthBlockDescriptor);
+    block->setParam(kChipParamWave, 2.0f);
+    block->setParam(kChipParamCrush, 0.0f);
+    block->setParam(kChipParamVibrato, 0.0f);
+    block->setParam(kChipParamQuantize, 1.0f);
+    block->setParam(kChipParamPickFilter, 15.0f);
     return block;
 }
 
@@ -293,7 +306,7 @@ double semitone(int midi)
 
 } // namespace
 
-TEST_CASE("poly chip plays one note, without the string's harmonics")
+TEST_CASE("chip synth in poly plays one note, without the string's harmonics")
 {
     for (const int midi : { 40, 55, 69, 81 }) // E2, G3, A4, A5
     {
@@ -312,7 +325,7 @@ TEST_CASE("poly chip plays one note, without the string's harmonics")
     }
 }
 
-TEST_CASE("poly chip plays every note of a chord")
+TEST_CASE("chip synth in poly plays every note of a chord")
 {
     // an open E major chord, low strings: E2 B2 E3 G#3 B3 (the upper E and B are octaves of lower notes, so they're
     // heard as harmonics); and a C major triad higher up
@@ -338,47 +351,7 @@ TEST_CASE("poly chip plays every note of a chord")
     }
 }
 
-TEST_CASE("poly chip voices: 1 plays only the loudest note")
-{
-    auto block = polyChip();
-    block->setParam(kPolyChipParamVoices, 1.0f);
-    // (guitar-like notes: the note finder takes a peak with no harmonics for noise or hum)
-    const auto quiet = note(semitone(48), 48000), louder = note(semitone(55), 48000);
-    std::vector<std::vector<float>> x(1, std::vector<float>(48000, 0.0f));
-    for (size_t i = 0; i < x[0].size(); ++i)
-        x[0][i] = 0.3f * quiet[0][i] + louder[0][i];
-    testing::runBlock(*block, x);
-    const double loud = toneAt(x[0], semitone(55), 24000, 48000);
-    CHECK(loud > 0.05);
-    CHECK(toneAt(x[0], semitone(48), 24000, 48000) < 0.05 * loud);
-}
-
-TEST_CASE("poly chip arpeggiates the chord, one note at a time")
-{
-    const std::vector<int> notes { 48, 55, 64 }; // C3 G3 E4: far enough apart to tell in short windows
-    auto block = polyChip();
-    block->setParam(kPolyChipParamArp, static_cast<float>(PolyChipArp::Up));
-    block->setParam(kPolyChipParamArpRate, 10.0f);
-    auto x = chord({ semitone(48), semitone(55), semitone(64) }, 96000);
-    testing::runBlock(*block, x);
-    // each note gets its turn
-    for (const int midi : notes)
-        CHECK(toneAt(x[0], semitone(midi), 24000, 96000) > 0.02);
-    // and in most short windows one note dominates
-    int clear = 0, windows = 0;
-    for (size_t from = 24000; from + 2400 <= 96000; from += 2400, ++windows)
-    {
-        std::vector<double> levels;
-        for (const int midi : notes)
-            levels.push_back(toneAt(x[0], semitone(midi), from, from + 2400));
-        std::sort(levels.begin(), levels.end());
-        if (levels[2] > 3.0 * levels[1])
-            ++clear;
-    }
-    CHECK(clear >= windows / 2);
-}
-
-TEST_CASE("poly chip falls silent after the chord")
+TEST_CASE("chip synth in poly falls silent after the chord")
 {
     auto block = polyChip();
     auto x = chord({ semitone(52), semitone(56), semitone(59) }, 48000);
@@ -444,7 +417,7 @@ double strayNotes(const std::vector<float>& x, int midi, size_t from, size_t to)
 
 } // namespace
 
-TEST_CASE("poly chip pick filter keeps the pick attack from sounding as high notes")
+TEST_CASE("chip synth in poly: the pick filter keeps the pick attack from sounding as high notes")
 {
     for (const int midi : { 40, 50, 55, 64 })
     {
@@ -452,12 +425,12 @@ TEST_CASE("poly chip pick filter keeps the pick attack from sounding as high not
         const double hz = semitone(midi);
         // the attack: the first 150 ms
         auto raw = polyChip();
-        raw->setParam(kPolyChipParamPickFilter, 0.0f);
+        raw->setParam(kChipParamPickFilter, 0.0f);
         auto x = pickedString(hz, 48000);
         testing::runBlock(*raw, x);
         const double unfiltered = strayNotes(x[0], midi, 0, ms(150));
 
-        auto filtered = polyChip(); // the default Pick Filter
+        auto filtered = polyChip(); // the Poly Chip's default Pick Filter
         auto y = pickedString(hz, 48000);
         testing::runBlock(*filtered, y);
         const double clean = strayNotes(y[0], midi, 0, ms(150));
@@ -472,14 +445,14 @@ TEST_CASE("poly chip pick filter keeps the pick attack from sounding as high not
     }
 }
 
-TEST_CASE("poly chip with quantize off plays the pitch you play")
+TEST_CASE("chip synth in poly with quantize off plays the pitch you play")
 {
     const double sharp = 440.0 * std::exp2(0.4 / 12.0); // 40 cents sharp
     for (const bool quantize : { true, false })
     {
         CAPTURE(quantize);
         auto block = polyChip();
-        block->setParam(kPolyChipParamQuantize, quantize ? 1.0f : 0.0f);
+        block->setParam(kChipParamQuantize, quantize ? 1.0f : 0.0f);
         auto x = note(sharp, 48000);
         testing::runBlock(*block, x);
         const double atNote = toneAt(x[0], 440.0, 24000, 48000);
@@ -491,11 +464,11 @@ TEST_CASE("poly chip with quantize off plays the pitch you play")
     }
 }
 
-TEST_CASE("poly chip bends smoothly across semitones with quantize off")
+TEST_CASE("chip synth in poly bends smoothly across semitones with quantize off")
 {
     // a sine bending up two semitones over a second: the voice moves from band to band without dropping out
     auto block = polyChip();
-    block->setParam(kPolyChipParamQuantize, 0.0f);
+    block->setParam(kChipParamQuantize, 0.0f);
     std::vector<std::vector<float>> x(1, std::vector<float>(ms(1500)));
     double phase = 0.0;
     for (size_t i = 0; i < x[0].size(); ++i)
@@ -515,6 +488,51 @@ TEST_CASE("poly chip bends smoothly across semitones with quantize off")
     // and it ends on the bent note
     const double target = 220.0 * std::exp2(2.0 / 12.0);
     CHECK(toneAt(x[0], target, ms(1300), ms(1500)) > 4.0 * toneAt(x[0], 220.0 * std::exp2(1.0 / 12.0), ms(1300), ms(1500)));
+}
+
+TEST_CASE("the synths in poly play every note of a chord, each with its own voice")
+{
+    // C3 G3 E4: far enough apart that no note is a harmonic of another
+    const std::vector<int> notes { 48, 55, 64 };
+    // (not the Super Saw: its detuned saws beat, so a note's level in a short window wanders)
+    for (const BlockDescriptor* type : { &kSynthBlockDescriptor, &kFmSynthBlockDescriptor, &kChipSynthBlockDescriptor,
+                                         &kWavetableBlockDescriptor, &kSubBassBlockDescriptor })
+    {
+        const std::string typeId = type->typeId;
+        CAPTURE(typeId);
+        auto block = makePoly(*type);
+        auto x = chord({ semitone(48), semitone(55), semitone(64) }, 48000);
+        testing::runBlock(*block, x);
+        double loudest = 0.0, weakest = 1.0;
+        for (const int midi : notes)
+        {
+            const double level = bandAt(x[0], semitone(midi), 24000, 48000);
+            loudest = std::max(loudest, level);
+            weakest = std::min(weakest, level);
+        }
+        CHECK(loudest > 0.01);
+        CHECK(weakest > 0.15 * loudest);
+    }
+}
+
+TEST_CASE("poly tracking: Mono is the default, and Poly takes the lookahead in whole hops")
+{
+    CHECK_FALSE(polyFromConfig(nlohmann::json::object()));
+    CHECK_FALSE(polyFromConfig(nlohmann::json { { "poly", false } }));
+    CHECK(polyFromConfig(nlohmann::json { { "poly", true } }));
+    for (const BlockDescriptor* type : BlockRegistry::builtin().types())
+    {
+        if (!type->poly)
+            continue;
+        const std::string typeId = type->typeId;
+        CAPTURE(typeId);
+        auto block = make(*type);
+        block->configure(nlohmann::json { { "poly", true }, { "lookahead", 10.0 }, { "hq", false } });
+        // 10 ms in hops of 256 samples at 48 kHz (5.3 ms): two
+        CHECK(block->latency() == 512);
+        block->configure(nlohmann::json { { "poly", false }, { "lookahead", 10.0 } });
+        CHECK(block->latency() == 480);
+    }
 }
 
 TEST_CASE("pick filter holds a new note until its pitch is steady")
@@ -639,11 +657,13 @@ TEST_CASE("tracking the rig, pitch-following blocks play at the level of their o
         s *= 0.5f;
     const std::vector<float> silent(rig.size(), 0.0f);
 
-    for (const BlockDescriptor* type : { &kSynthBlockDescriptor, &kSuperSawBlockDescriptor, &kPolyChipBlockDescriptor })
+    for (const BlockDescriptor* type : { &kSynthBlockDescriptor, &kSuperSawBlockDescriptor })
+    for (const bool poly : { false, true })
     {
         CAPTURE(std::string(type->typeId));
+        CAPTURE(poly);
         const auto run = [&](const std::vector<float>& input) {
-            auto block = make(*type);
+            auto block = poly ? makePoly(*type) : make(*type);
             const std::vector<float> out = runTrackingRig(*block, input, rig);
             return testing::rms(out, 24000, 48000);
         };

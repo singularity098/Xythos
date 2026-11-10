@@ -10,7 +10,8 @@ namespace xythos {
 // Analog-style octaver (like an OC-2): flip-flops divide the played note by two and four, switching the signal's
 // polarity at its zero crossings, so the octaves down keep the guitar's dynamics with zero latency. The detector's
 // low-pass follows the played note (dsp/PitchTracker.hpp), which keeps harmonics from upsetting the division. Octave up is a
-// full-wave rectifier. Single notes only; chords confuse it, as they do the original. No config.
+// full-wave rectifier. Single notes only; chords confuse it, as they do the original. Config: "lookahead", and "poly"
+// (Poly tracking: the low-pass follows the chord's lowest note; blocks/TrackedInput.hpp).
 extern const BlockDescriptor kOctaveBlockDescriptor;
 
 enum OctaveParam {

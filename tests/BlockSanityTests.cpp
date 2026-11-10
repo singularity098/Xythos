@@ -34,11 +34,11 @@ struct Result {
 };
 
 Result run(const BlockDescriptor& type, const std::vector<float>& normalized, double rate, int channels,
-           uint32_t seed)
+           uint32_t seed, const nlohmann::json& config = nlohmann::json::object())
 {
     std::unique_ptr<Block> block = type.create();
     block->prepare(rate, 256);
-    block->configure(nlohmann::json::object());
+    block->configure(config);
     for (int p = 0; p < type.numParams; ++p)
         block->setParam(p, type.params[p].toValue(normalized[p]));
 
@@ -116,6 +116,18 @@ TEST_CASE("every built-in block stays finite and bounded, and doesn't allocate, 
                     CHECK(r.peak < 40.0f);
                 }
             }
+            if (type->poly)
+            {
+                // and in Poly tracking (fewer runs: it's the same block with more voices)
+                const std::string typeId = type->typeId;
+                CAPTURE(typeId);
+                CAPTURE(s);
+                const Result r = run(*type, sets[s], 48000.0, 1 + static_cast<int>(s % 2), static_cast<uint32_t>(s + 1),
+                                     nlohmann::json { { "poly", true } });
+                CHECK(r.finite);
+                CHECK(r.allocations == 0);
+                CHECK(r.peak < 40.0f);
+            }
         }
     }
 }
@@ -134,6 +146,18 @@ TEST_CASE("every built-in block is silent for silence at its defaults")
             for (float v : ch)
                 peak = std::max(peak, std::fabs(v));
         CHECK(peak < 1e-4f);
+        if (type->poly)
+        {
+            // in Poly too
+            block->configure(nlohmann::json { { "poly", true } });
+            std::vector<std::vector<float>> y(2, std::vector<float>(48000, 0.0f));
+            testing::runBlock(*block, y, 256);
+            float polyPeak = 0.0f;
+            for (const auto& ch : y)
+                for (float v : ch)
+                    polyPeak = std::max(polyPeak, std::fabs(v));
+            CHECK(polyPeak < 1e-4f);
+        }
     }
 }
 
@@ -161,6 +185,9 @@ TEST_CASE("block descriptors are consistent")
             CHECK(type->params[type->syncParam].scale == ParamScale::Toggle);
             CHECK(type->syncedParam >= 0);
         }
+        // a block with a Poly mode follows notes, so it has Lookahead too
+        if (type->poly)
+            CHECK(type->lookahead);
     }
 }
 
