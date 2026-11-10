@@ -446,7 +446,7 @@ const std::vector<PedalFace>& pedalFaces()
           { 0.498f, 0.675f, 0.125f },
           { 0xff, 0x49, 0x9e } },
         { "fart",
-          { { "Length", 0.295f, 0.236f, 0.092f }, { "Wetness", 0.503f, 0.182f, 0.092f }, { "Mix", 0.71f, 0.236f, 0.092f } },
+          { { "Length", 0.295f, 0.236f, 0.092f }, { "Tone", 0.503f, 0.182f, 0.092f }, { "Mix", 0.71f, 0.236f, 0.092f } },
           { { 0.502f, 0.648f, 0.045f, 0xab, 0x72, 0xff } },
           { 0.501f, 0.761f, 0.13f },
           { 0xab, 0x72, 0xff } },

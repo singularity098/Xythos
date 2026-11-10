@@ -226,6 +226,19 @@ target_compile_definitions(xythos-engine PUBLIC XYTHOS_VERSION="${PROJECT_VERSIO
 find_package(Threads REQUIRED)
 target_link_libraries(xythos-engine PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,nam>" fftconvolver miniz xxhash signalsmith Threads::Threads)
 
+# The Fart pedal's samples: the WAVs in resources/farts/ (made by tools/prepare_fart_samples.py), embedded as byte
+# arrays at build time
+file(GLOB XYTHOS_FART_SAMPLES CONFIGURE_DEPENDS resources/farts/*.wav)
+set(XYTHOS_FART_SAMPLES_CPP ${CMAKE_CURRENT_BINARY_DIR}/generated/FartSamples.cpp)
+add_custom_command(
+  OUTPUT ${XYTHOS_FART_SAMPLES_CPP}
+  COMMAND ${CMAKE_COMMAND} -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/resources/farts -DOUT=${XYTHOS_FART_SAMPLES_CPP}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedFartSamples.cmake
+  DEPENDS ${XYTHOS_FART_SAMPLES} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedFartSamples.cmake
+  COMMENT "Embedding the fart samples"
+  VERBATIM)
+target_sources(xythos-engine PRIVATE ${XYTHOS_FART_SAMPLES_CPP})
+
 set(XYTHOS_WARNINGS $<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>)
 target_compile_options(xythos-engine PRIVATE ${XYTHOS_WARNINGS})
 

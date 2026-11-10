@@ -76,7 +76,7 @@ src/engine/           Audio engine, independent of DPF (static library `xythos-e
                       third set: ResonatorBlocks
                       (sympathetic strings, jawari), CloudBlocks (grain cloud, swarm), TimeFxBlocks (tape stop,
                       bouncing ball, pattern delay), TextureBlocks (chaos mod, acoustic sim), PlayedBlocks (strum
-                      machine, hard tune, drum trigger), InstrumentBlocks (fart, trumpet, violin, piano); MidiOutBlock
+                      machine, hard tune, drum trigger), InstrumentBlocks (fart: a sampler, FartSamples.hpp; trumpet, violin, piano); MidiOutBlock
                       (MIDI notes from your playing, mono with bend or poly); DiBlocks: the DI category (bass DI boxes
                       and preamps: transformer, tube, opto, preamps, drives); CompBlocks: the compressor pedals (diode
                       bridge, console channel, opto leveler, opto stomp, FET limiter, OTA squash); MoreSynthBlocks: the
@@ -124,13 +124,15 @@ tests/recordings/     The owner's DI recordings and their note lists (<clip>.not
                       clip, XYTHOS_TRACKING_ONLY=<name> some clips). Decoded, the unit tests score them too (4 minutes)
 docs/                 Requirements, architecture, the pedal image prompts (PedalImagePrompts.md), and the recordings asked of the owner
                       for note tracking, drop-A 7-string guitar and 5-string bass (RecordingList.md)
-cmake/                EmbedBlockImages.cmake: turns resources/blocks/*.webp into BlockImages.cpp at build time
+cmake/                EmbedBlockImages.cmake: turns resources/blocks/*.webp into BlockImages.cpp at build time; EmbedFartSamples.cmake the Fart's WAVs
 resources/logo/       The logo: xythos.svg (the master; dark UI) and xythos-light.svg (for light backgrounds, the README), rendered to PNGs by
                       tools/render_logo.js (also xythos-mark.png and xythos-wordmark.png, the layers the plugin embeds) (Node + Playwright: the glows are SVG filters); tools/embed_logo.py makes LogoImage.cpp
 resources/fonts/      Jost (variable TTF + OFL.txt); tools/embed_font.py makes the Light and Regular instances into src/ui/FontData.cpp
 resources/pedals/     The generic pedal photos NAM pedal captures (and pedals awaiting their render) show, pedal-<n>.webp (1280 px high) and thumbs/ (384 px); made by tools/prepare_pedal_images.py
 resources/amps/       The amp head photos NAM amps show, amp-<n>.webp (1280 px wide) and thumbs/ (384 px); made by tools/prepare_amp_images.py; faces in PedalFaces.cpp (ampHeadFaces()), style tags in FileLooks.cpp
 resources/cabs/       The speaker cabinet photos IR blocks show, <size>-<n>.webp (896 px long side) and thumbs/ (320 px); made by tools/prepare_cab_images.py
+resources/farts/      The Fart pedal's samples, <id>.wav (16-bit mono 48 kHz, peak-normalized); made by tools/prepare_fart_samples.py from the owner's
+                      MP3s, which also prints their pitches and gains for kFartSamples (InstrumentBlocks.cpp); embedded by cmake/EmbedFartSamples.cmake
 resources/blocks/     The pedal photos, <typeId>.webp (1:2, 1280 px high, WebP q96) and thumbs/<typeId>.webp (384 px); made by tools/prepare_block_image.py
 resources/knobs/      The face knobs (knob.png black, rim.png the owner's blue-rim knob, pointing up) and the lighting layer (sheen.png);
                       tools/embed_knob_images.py makes KnobImages.cpp
