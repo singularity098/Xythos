@@ -10,6 +10,7 @@
 
 #include "engine/CpuHints.hpp"
 #include "engine/blocks/CloudBlocks.hpp"
+#include "engine/blocks/FartSamples.hpp"
 #include "engine/blocks/InstrumentBlocks.hpp"
 #include "engine/blocks/PlayedBlocks.hpp"
 #include "engine/blocks/ResonatorBlocks.hpp"
@@ -424,30 +425,107 @@ TEST_CASE("drum trigger: low thumps play the kick, bright clicks the snare or hi
     CHECK(highShare(snare[0], 1000.0, ms(60), ms(200)) > 0.4);
 }
 
-TEST_CASE("fart plays every kind, at the note, and stops on its own")
+// Where x is first and last louder than `floor` (in samples; {0, 0} if never)
+std::pair<size_t, size_t> soundingSpan(const std::vector<float>& x, float floor)
 {
+    size_t first = x.size(), last = 0;
+    for (size_t i = 0; i < x.size(); ++i)
+        if (std::abs(x[i]) > floor)
+        {
+            first = std::min(first, i);
+            last = i;
+        }
+    return first < x.size() ? std::make_pair(first, last) : std::make_pair(size_t { 0 }, size_t { 0 });
+}
+
+TEST_CASE("fart plays every sample, and each stops on its own")
+{
+    REQUIRE(std::string(fartTypeName(0)) == "Rumble");
     for (int type = 0; type <= kFartTypes; ++type)
     {
         CAPTURE(type);
         auto block = make(kFartBlockDescriptor);
         block->setParam(kFartParamType, static_cast<float>(type));
-        auto x = picked(52.0, 0.3, 6.0);
+        block->setParam(kFartParamPitch, 1.0f); // Natural: as recorded, at most 7.4 s
+        auto x = picked(52.0, 0.3, 8.0);
         testing::runBlock(*block, x);
-        CHECK(testing::rms(x[0], ms(80), ms(300)) > 0.01);
-        CHECK(testing::rms(x[0], ms(5500), ms(6000)) < 1e-4);
+        CHECK(testing::rms(x[0], ms(60), ms(250)) > 0.005);
+        CHECK(testing::rms(x[0], ms(7800), ms(8000)) < 1e-4);
     }
-    // each kind sounds different
-    std::vector<double> levels;
-    for (int type = 1; type <= kFartTypes; ++type)
-    {
+}
+
+TEST_CASE("fart follows the note like a sampler: an octave up plays twice as fast")
+{
+    auto span = [](double midi, bool natural) {
         auto block = make(kFartBlockDescriptor);
-        block->setParam(kFartParamType, static_cast<float>(type));
+        block->setParam(kFartParamType, static_cast<float>(kFartTypes)); // Mouse, the highest: 0.38 s
+        block->setParam(kFartParamOctave, 2.0f);                        // 0: at the note
+        block->setParam(kFartParamPitch, natural ? 1.0f : 0.0f);
+        auto x = picked(midi, 0.3, 2.0);
+        testing::runBlock(*block, x);
+        const auto [first, last] = soundingSpan(x[0], 1e-3f);
+        return static_cast<double>(last - first) / kRate;
+    };
+    const double low = span(57.0, false), high = span(69.0, false);
+    CAPTURE(low);
+    CAPTURE(high);
+    // A3 is 220 Hz: the 595 Hz sample at 0.37 times the speed lasts about 1 s; A4 about 0.5 s
+    CHECK(low == doctest::Approx(1.03).epsilon(0.1));
+    CHECK(low / high == doctest::Approx(2.0).epsilon(0.05));
+    // Natural: as recorded, whatever the note
+    CHECK(span(57.0, true) == doctest::Approx(0.38).epsilon(0.1));
+    CHECK(span(69.0, true) == doctest::Approx(span(57.0, true)).epsilon(0.02));
+}
+
+TEST_CASE("fart's Length cuts it short, and Held stops it with the note")
+{
+    auto play = [](float length, bool held) {
+        auto block = make(kFartBlockDescriptor);
+        block->setParam(kFartParamType, static_cast<float>(kFartTypes - 1)); // Balloon: 7.4 s as recorded
+        block->setParam(kFartParamPitch, 1.0f);
+        block->setParam(kFartParamLength, length);
+        block->setParam(kFartParamHold, held ? 1.0f : 0.0f);
+        auto x = picked(52.0, 0.3, 3.0);
+        testing::runBlock(*block, x);
+        return x;
+    };
+    const auto whole = play(100.0f, false);
+    CHECK(testing::rms(whole[0], ms(2000), ms(2500)) > 0.01);
+    const auto shortened = play(10.0f, false); // 0.74 s
+    const auto [first, last] = soundingSpan(shortened[0], 1e-3f);
+    CHECK(static_cast<double>(last - first) / kRate == doctest::Approx(0.74).epsilon(0.05));
+    const auto held = play(100.0f, true);
+    CHECK(testing::rms(held[0], ms(150), ms(300)) > 0.01);
+    CHECK(testing::rms(held[0], ms(600), ms(3000)) < 1e-4);
+}
+
+TEST_CASE("fart's Random plays at any note, Tone filters, and the samples' WAV reader rejects others")
+{
+    for (double midi : { 28.0, 40.0, 52.0, 64.0, 76.0, 88.0 })
+    {
+        CAPTURE(midi);
+        auto block = make(kFartBlockDescriptor);
+        auto x = picked(midi, 0.3, 1.0);
+        testing::runBlock(*block, x);
+        CHECK(testing::rms(x[0], ms(60), ms(300)) > 0.005);
+    }
+    auto bright = [](float tone) {
+        auto block = make(kFartBlockDescriptor);
+        block->setParam(kFartParamType, 16.0f); // Squish
+        block->setParam(kFartParamPitch, 1.0f);
+        block->setParam(kFartParamTone, tone);
         auto x = picked(52.0, 0.3, 1.0);
         testing::runBlock(*block, x);
-        levels.push_back(highShare(x[0], 800.0, ms(80), ms(400)));
-    }
-    std::sort(levels.begin(), levels.end());
-    CHECK(levels.back() > 2.0 * levels.front());
+        return highShare(x[0], 1000.0, ms(60), ms(500));
+    };
+    CHECK(bright(0.0f) < 0.5 * bright(50.0f));
+    CHECK(bright(100.0f) > bright(50.0f));
+
+    const unsigned char junk[] = "RIFF\x10\0\0\0WAVEdata\xff\xff\xff\xff";
+    CHECK(pcmFromWav(junk, sizeof(junk)).frames == 0);
+    CHECK(pcmFromWav(nullptr, 0).frames == 0);
+    const EmbeddedFile none = builtinFartSample("no such fart");
+    CHECK(none.data == nullptr);
 }
 
 TEST_CASE("trumpet and violin play the note you play")
