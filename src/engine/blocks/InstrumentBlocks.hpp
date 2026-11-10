@@ -17,7 +17,10 @@ namespace xythos {
 // those within half an octave of the note (the nearest three if fewer), so high notes get the squeakers and low
 // notes the rumbles, never the same twice running. Pitch Natural plays them as recorded. Length cuts them short
 // (with a fade), Tone darkens (a low-pass) or thins (a high-pass), Hold Held fades them out when the note ends.
-// Up to three at once; a fourth fades out the oldest.
+// Up to three at once; a fourth fades out the oldest. Overlap Single plays one at a time (a new one cuts the last
+// short; in Poly, only the lowest note of a chord plays). Duration Fixed keeps every fart its recorded length at any
+// pitch (granular: overlapping grains read at the note's speed while the sample moves on at its own).
+// (Overlap and Duration came after Track, owner 2026-11-10: the slots keep their order.)
 extern const BlockDescriptor kFartBlockDescriptor;
 
 enum FartParam {
@@ -30,6 +33,8 @@ enum FartParam {
     kFartParamHold,    // choice: One Shot, Held
     kFartParamPickFilter, // ms
     kFartParamTrack,   // choice: Block In, Rig In
+    kFartParamOverlap, // choice: Stack, Single
+    kFartParamDuration, // choice: Varies, Fixed
     kFartParamCount
 };
 

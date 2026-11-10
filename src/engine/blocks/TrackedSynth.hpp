@@ -94,6 +94,7 @@ public:
         resetVoice();
         for (PolyVoice& voice : fPolyVoices)
             voice = PolyVoice {};
+        fSinceStart = 1e9;
         for (int v = 1; v < kVoices; ++v)
             if (fVoiceSynths[static_cast<size_t>(v)])
                 fVoiceSynths[static_cast<size_t>(v)]->resetVoice();
@@ -118,6 +119,12 @@ protected:
     virtual double targetHz(double tracked) { return tracked; }
     // Poly: another instance of the synth, for a voice (Voiced<> makes them)
     virtual std::unique_ptr<TrackedSynth> makeVoice() const { return nullptr; }
+    // Poly: true when the synth plays one sound at a time across all its voices (the Fart's Overlap Single): of the
+    // notes starting together, only the lowest starts, none within kSingleWindow of the last start (a strum gives
+    // one), and a start silences the other voices (stopSounds())
+    virtual bool singleSound() const { return false; }
+    // Poly, Single: fades out whatever this voice is playing, quickly
+    virtual void stopSounds() {}
 
     // RT. Passes a control on to the voices (Voiced<> calls it from setParam())
     void forwardParam(int index, float value)
@@ -245,6 +252,9 @@ private:
         }
     }
 
+    // Single: how long after a start other notes' starts are ignored, in seconds
+    static constexpr double kSingleWindow = 0.08;
+
     void processPoly(float* const* io, uint32_t numChannels, uint32_t frames)
     {
         for (uint32_t i = 0; i < frames; ++i)
@@ -253,6 +263,10 @@ private:
             fInput.process(io, numChannels, i);
             if (fInput.frameReady())
                 takeFrame(fInput.frame());
+            if (fSinceStart < 1e9)
+                fSinceStart += 1.0 / fSampleRate;
+            if (singleSound())
+                singleStarts();
             const float gain = fInput.polyGain();
             float left = 0.0f, right = 0.0f;
             for (int v = 0; v < kVoices; ++v)
@@ -283,6 +297,35 @@ private:
             }
             output(io, numChannels, i, left * kPolyLevel, right * kPolyLevel);
         }
+    }
+
+    // Single: keeps the lowest of the notes starting now (if it's not too soon after the last start) and silences the
+    // other voices for it
+    void singleStarts()
+    {
+        int start = -1;
+        for (int v = 0; v < kVoices; ++v)
+        {
+            PolyVoice& voice = fPolyVoices[static_cast<size_t>(v)];
+            if (!voice.onset || !voiceSynth(v))
+                continue;
+            if (start < 0 || voice.targetHz < fPolyVoices[static_cast<size_t>(start)].targetHz)
+                start = v;
+        }
+        if (start < 0)
+            return;
+        const bool tooSoon = fSinceStart < kSingleWindow;
+        for (int v = 0; v < kVoices; ++v)
+        {
+            if (v == start && !tooSoon)
+                continue;
+            fPolyVoices[static_cast<size_t>(v)].onset = false;
+            if (!tooSoon)
+                if (TrackedSynth* synth = voiceSynth(v))
+                    synth->stopSounds();
+        }
+        if (!tooSoon)
+            fSinceStart = 0.0;
     }
 
     // The voices take up a frame of notes: new notes get a voice, ended ones release theirs
@@ -375,6 +418,7 @@ private:
 
     TrackedInput fInput;
     double fTrackedHz = 0.0;
+    double fSinceStart = 1e9; // Poly, Single: seconds since the last start
     Smoother fMix;
     double fOctaveRatio = 1.0;
     float fAttackMs = 5.0f, fReleaseMs = 30.0f, fGlideMs = 10.0f;
