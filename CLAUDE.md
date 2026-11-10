@@ -111,7 +111,7 @@ tests/                doctest unit tests; TestSupport.hpp has a test block and a
                       XYTHOS_TRACKING_BENCH=1 ./build/xythos-tests -tc="*tracking benchmark"; PolyTrackingTests.cpp
                       is the chords' benchmark; RealTrackingTests.cpp scores both trackers on the owner's DI recordings,
                       with RealTracking.hpp, the clips, note lists and scoring, which a standalone program can include
-                      too: a quick way to try a change on all 34 clips)
+                      too: a quick way to try a change on all 35 clips)
 fuzz/                 Fuzz targets (fuzz/README.md): every parser of outside input (chain state, presets and their zips, settings,
                       update check, WAV, IR, NAM, WebP, stb_image) and the engine under random host events. xythos-fuzz-replay
                       (a ctest: seed corpus fuzz/corpus/ + fixed mutations, any compiler); libFuzzer + ASan/UBSan binaries with
