@@ -1,0 +1,23 @@
+# gtr-chords: each chord strummed once and left ringing about 2 s, then muted: E, A, D, G, C, Em, Am, Dm, F (barre),
+# Bm (barre). The voicings were checked against the spectrum (16384-sample windows); a ?note is a string that may be
+# ringing along (the barre across the low strings, an open string), or one the spectrum can't settle.
+4.095 6.070 E2 B2 E3 G#3 B3 E4
+6.070 6.290 ?E2 ?B2 ?E3 ?G#3 ?B3 ?E4
+7.855 10.030 A2 E3 A3 C#4 E4
+10.030 10.250 ?A2 ?E3 ?A3 ?C#4 ?E4
+11.880 14.380 D3 A3 D4 F#4
+14.380 14.660 ?D3 ?A3 ?D4 ?F#4
+15.795 18.295 G2 B2 D3 G3 B3 G4 ?D4
+18.295 19.125 ?G2 ?B2 ?D3 ?G3 ?B3 ?G4 ?D4
+19.805 22.305 C3 E3 G3 C4 E4 ?E2
+22.305 23.100 ?C3 ?E3 ?G3 ?C4 ?E4 ?E2
+23.765 26.265 E2 B2 E3 G3 B3 E4
+26.265 27.100 ?E2 ?B2 ?E3 ?G3 ?B3 ?E4
+27.785 30.285 A2 E3 A3 C4 E4 ?E2
+30.285 31.355 ?A2 ?E3 ?A3 ?C4 ?E4 ?E2
+31.870 34.370 D3 A3 D4 F4
+34.370 34.745 ?D3 ?A3 ?D4 ?F4
+35.825 38.325 F2 C3 F3 A3 C4 F4 ?A#1 ?A#2
+38.325 39.170 ?F2 ?C3 ?F3 ?A3 ?C4 ?F4 ?A#1 ?A#2
+39.860 42.360 B2 F#3 B3 D4 F#4 ?F#2
+42.360 43.140 ?B2 ?F#3 ?B3 ?D4 ?F#4 ?F#2

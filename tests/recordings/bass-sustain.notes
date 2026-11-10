@@ -1,0 +1,17 @@
+# bass-sustain.wav: made by the offline annotator (long-window pitch analysis), checked against
+# what the file is meant to hold. See tests/recordings/README.md.
+1.255 1.280 ?D1 ?D#1
+1.280 1.290 ?D#1
+1.290 1.300 ?D#1 ?E1
+4.000 4.015 *
+4.015 12.550 B0
+12.550 21.110 B0|B1
+21.110 22.805 ?B0 ?B1
+22.805 22.865 ?B0
+22.865 22.925 ?B1
+22.925 22.950 ?B0
+22.950 22.990 ?B0 ?C1
+24.020 24.035 *
+24.035 36.445 E1
+36.445 50.865 E1|E2
+50.865 58.200 ?E1 ?E2

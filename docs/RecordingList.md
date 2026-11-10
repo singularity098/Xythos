@@ -1,5 +1,10 @@
 # Recordings wanted (short version)
 
+**Received on 2026-11-09**: all 14 files, as lossless FLAC, and 12 more of the owner's own (`*-custom-*`). They are in
+`tests/recordings` (see its README.md). One difference from this list: the bass is in standard B tuning (B0 E1 A1 D2
+G2), not drop A, in the six files asked for; the owner recorded two string walks and a sustained open A in drop A to
+make up for it. The list below is kept as it was sent.
+
 14 short files, about 20 minutes of playing in all. No click, no counting bars, nothing to learn: each file is
 one simple thing. I find where every note starts in the audio myself, so all I need is that you play what the
 file says, in that order.

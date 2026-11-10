@@ -1,0 +1,15 @@
+# gtr-low-chords: power chords on the three lowest strings of a 7-string in drop A (A1 E2 A2 open), at the open
+# position, 3rd, 5th and 7th frets: each strummed once and left ringing, then the same four chugged palm-muted (there
+# one of the chord's notes must sound, any of them may).
+4.020 5.950 A1 E2 A2
+5.950 6.170 ?A1 ?E2 ?A2
+6.985 9.230 C2 G2 C3
+9.230 9.450 ?C2 ?G2 ?C3
+9.940 12.335 D2 A2 D3
+12.335 12.555 ?D2 ?A2 ?D3
+12.900 15.400 E2 B2 E3
+15.400 15.735 ?E2 ?B2 ?E3
+16.000 18.855 A1|E2|A2 ?A1 ?E2 ?A2
+20.000 22.945 C2|G2|C3 ?C2 ?G2 ?C3
+23.890 26.760 D2|A2|D3 ?D2 ?A2 ?D3
+27.675 30.445 E2|B2|E3 ?E2 ?B2 ?E3
