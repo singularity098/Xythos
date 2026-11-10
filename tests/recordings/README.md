@@ -45,6 +45,7 @@ those three to make up for it. `bass-custom-fast-picked` is in standard B too (i
 | `gtr-custom-slow-ringing-arpeggios-e-g-d-c` | The open chords E, G, D and C, a string at a time, all left ringing. |
 | `gtr-custom-e-minor-pentatonic-noodling` | Improvised: bends, slides, double stops. |
 | `gtr-custom-tetris-theme` | A melody. |
+| `gtr-custom-axel-f-theme` | The Beverly Hills Cop (Axel F) theme in F# minor (2026-11-10, the owner's report of missed high notes): the open D3 string rings along under the C#4 and D4, the C#4 under the F#4. Its `.ov` names the melody's notes there. |
 | `bass-custom-311-what-was-i-thinking` | A riff with many hammer-ons. |
 | `bass-custom-limp-bizkit-rearranged` | A riff. |
 | `bass-custom-metallica-anesthesia` | From a bass solo: notes left ringing over an open string, double stops. |

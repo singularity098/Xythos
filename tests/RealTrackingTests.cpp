@@ -60,7 +60,7 @@ TEST_CASE("the poly note finder on the owner's recordings")
     CHECK(guitar.missed <= 28);
     CHECK(guitar.missingMs <= 92000.0);
     CHECK(guitar.missingClassMs <= 17500.0);
-    CHECK(guitar.strayMs <= 34000.0);
+    CHECK(guitar.strayMs <= 34800.0); // (with the Axel F theme of 2026-11-10, where the open D3 string rings along)
     const RealScore& bass = plain.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 8);
     CHECK(bass.missingMs <= 7000.0);
@@ -86,7 +86,10 @@ TEST_CASE("the note tracker on the owner's recordings")
     // Before the pitch tracker's rework of 2026-11-09 (PitchTracker.hpp; NoteTracker.hpp's repeated notes and mutes),
     // on all 34 clips (770 notes, 629 s of note time): 25 never found, 160 s missing (a sustained low string read an
     // octave up within seconds, a bass's fundamental under 60 Hz was taken for strings ringing together, notes
-    // ended at every pick of a tremolo), 2501 stray notes, 72 s. Now 2 never found, 28 s missing, 1017 strays, 29 s.
+    // ended at every pick of a tremolo), 2501 stray notes, 72 s. Then 2 never found, 28 s missing, 1017 strays, 29 s.
+    // With notes ringing together told apart (2026-11-10: a note found since its pick stays that note over the period
+    // it shares with an open string ringing along, and the louder of a period's notes wins), on 35 clips (791 notes):
+    // 2 never found, 26.3 s missing (was 28.3 s), 1005 strays, 27.3 s (was 30.1 s).
     const auto mono = realBench("note tracker (mono)", monoTracker(0.0f, 0.0), true, false);
     const RealScore& first = mono.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 1);
@@ -95,10 +98,33 @@ TEST_CASE("the note tracker on the owner's recordings")
     CHECK(first.straySubMs <= 7700.0); // (palm-muted power chords, an octave below: the mute's thump is their fundamental)
     const RealScore& guitar = mono.sets[static_cast<int>(ClipSet::Guitar)];
     CHECK(guitar.missed <= 2);
-    CHECK(guitar.missingMs <= 11600.0);
-    CHECK(guitar.strayMs <= 10700.0);
+    CHECK(guitar.missingMs <= 11000.0);
+    CHECK(guitar.strayMs <= 10300.0);
     const RealScore& bass = mono.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 1);
-    CHECK(bass.missingMs <= 9000.0);
-    CHECK(bass.strayMs <= 11900.0);
+    CHECK(bass.missingMs <= 8600.0);
+    CHECK(bass.strayMs <= 11400.0);
+}
+
+TEST_CASE("the note tracker follows a melody's high notes over an open string ringing along")
+{
+    // The owner's Axel F theme (2026-11-10, gtr-custom-axel-f-theme, in F# minor): the open D3 string rings along 10 dB
+    // under the C#4 and D4, and the C#4 is left ringing 8 dB under the F#4 picked next. They used to play C#3, D3 and
+    // F#2, the period each pair shares: 668 ms of the melody missing, 596 ms of notes an octave or two below it.
+    const Clip* clip = nullptr;
+    for (const Clip& c : clips())
+        if (c.name == "gtr-custom-axel-f-theme")
+            clip = &c;
+    if (clip == nullptr)
+    {
+        MESSAGE("no decoded recordings (tools/decode_recordings.sh): skipped");
+        return;
+    }
+    std::vector<Notes> out;
+    const size_t latency = monoTracker(0.0f, 0.0)(clip->signal, out);
+    const RealScore s = score(*clip, out, latency, true, false);
+    CHECK(s.missed == 0);
+    CHECK(s.missingMs <= 150.0);
+    CHECK(s.straySubMs <= 100.0);
+    CHECK(s.strayMs <= 150.0);
 }
