@@ -50,29 +50,32 @@ TEST_CASE("the poly note finder on the owner's recordings")
     // stray notes 1453, 84 s (was 4351, 401 s: 328 s of it harmonics of single notes). On the first eight clips alone
     // (chords, with their doublings listed as played) the filter bank, tuned on them, did better: 4 never found, 16 s
     // missing, 7 s of strays.
+    // 2026-11-12 (the single-note tracker's note taken as one note alone in more cases: picked over and over, held
+    // through its harmonics, and notes a semitone or two from it dropped): strays 86.1 s -> 58.9 s, missing 124.1 s ->
+    // 123.4 s, never found 54 (bass 32.7 -> 17.7 s of strays, guitar 34.3 -> 24.9 s, first clips 19.1 -> 16.3 s).
     const auto plain = realBench("poly note finder", polyFinder(0.0), false, false);
     const RealScore& first = plain.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 25);
     CHECK(first.missingMs <= 32000.0);
     CHECK(first.missingClassMs <= 4800.0);
-    CHECK(first.strayMs <= 20000.0);
+    CHECK(first.strayMs <= 17500.0);
     const RealScore& guitar = plain.sets[static_cast<int>(ClipSet::Guitar)];
     CHECK(guitar.missed <= 28);
     CHECK(guitar.missingMs <= 92000.0);
     CHECK(guitar.missingClassMs <= 17500.0);
-    CHECK(guitar.strayMs <= 34800.0); // (with the Axel F theme of 2026-11-10, where the open D3 string rings along)
+    CHECK(guitar.strayMs <= 26500.0);
     const RealScore& bass = plain.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 8);
     CHECK(bass.missingMs <= 7000.0);
     CHECK(bass.missingClassMs <= 6200.0);
-    CHECK(bass.strayMs <= 35000.0);
+    CHECK(bass.strayMs <= 19500.0);
     // a live input's hiss and hum (-66 dB) cost some of the quiet bass notes' time, and add few strays
-    // (the filter bank with them: 199 s missing, 365 s of strays)
+    // (the filter bank with them: 199 s missing, 365 s of strays; before 2026-11-12: 156 s missing, 94 s of strays)
     const auto noisy = realBench("poly note finder, with hiss and hum", polyFinder(0.0, 0.0005f), false, false);
     CHECK(noisy.total.missed <= 65);
-    CHECK(noisy.total.missingMs <= 165000.0);
+    CHECK(noisy.total.missingMs <= 160000.0);
     CHECK(noisy.total.missingClassMs <= 65000.0);
-    CHECK(noisy.total.strayMs <= 96000.0);
+    CHECK(noisy.total.strayMs <= 67000.0);
 }
 
 TEST_CASE("the note tracker on the owner's recordings")
@@ -89,7 +92,9 @@ TEST_CASE("the note tracker on the owner's recordings")
     // ended at every pick of a tremolo), 2501 stray notes, 72 s. Then 2 never found, 28 s missing, 1017 strays, 29 s.
     // With notes ringing together told apart (2026-11-10: a note found since its pick stays that note over the period
     // it shares with an open string ringing along, and the louder of a period's notes wins), on 35 clips (791 notes):
-    // 2 never found, 26.3 s missing (was 28.3 s), 1005 strays, 27.3 s (was 30.1 s).
+    // 2 never found, 26.3 s missing (was 28.3 s), 1005 strays, 27.3 s (was 30.1 s). With a low note's sharp picks and
+    // a long note's harmonics held as that note (2026-11-12): 24.0 s missing, 25.5 s of strays (the bass 8.3 -> 6.0 s
+    // missing, 11.1 -> 9.2 s of strays; bass-sustain 3.0 s of both -> 0.1 s).
     const auto mono = realBench("note tracker (mono)", monoTracker(0.0f, 0.0), true, false);
     const RealScore& first = mono.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 1);
@@ -102,8 +107,8 @@ TEST_CASE("the note tracker on the owner's recordings")
     CHECK(guitar.strayMs <= 10300.0);
     const RealScore& bass = mono.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 1);
-    CHECK(bass.missingMs <= 8600.0);
-    CHECK(bass.strayMs <= 11400.0);
+    CHECK(bass.missingMs <= 6600.0);
+    CHECK(bass.strayMs <= 10000.0);
 }
 
 TEST_CASE("the note tracker follows a melody's high notes over an open string ringing along")

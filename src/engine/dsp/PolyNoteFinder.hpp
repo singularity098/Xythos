@@ -30,7 +30,10 @@ namespace xythos {
 //   (NoteTracker.hpp) runs alongside. The note it plays is a note here at once, if its fundamental is in the long
 //   spectrum too (notes ringing together can pass for one note at their common period for a moment). While it plays
 //   one clearly (and for 150 ms after: between a repeated note's picks it isn't clear), nothing else starts, and what
-//   was found in the 100 ms before was its pick. All that is at its harmonics is learnt as its own.
+//   was found in the 100 ms before was its pick. All that is at its harmonics is learnt as its own. A low note being
+//   picked over and over counts as clear too (NoteTracker::repeating()), and so does one held through its harmonics'
+//   period as its fundamental dies away. Once it has played alone 32 ms, notes a semitone or two from it that aren't
+//   1.5 times louder are the same string's pitch before (a sharp pick, a slide) and end (2026-11-12).
 // - For chords the input is decimated to about 12 kHz, and every 5.3 ms (a hop) three spectra are taken of it (Hann
 //   windows): 171 ms long for what's under 150 Hz, where the partials of a low chord are 25 Hz apart (an open G's G2,
 //   B2 and D3), 85 ms up to 1 kHz, and 43 ms above. Their peaks (frequency and level from the two highest bins) are
@@ -272,7 +275,9 @@ private:
     static constexpr double kFloorFallMs = 300.0;
     // dB/s: while nothing sounds; not while notes do (a floor creeping up under a note held for 20 seconds cut it off)
     static constexpr double kFloorRiseDb[2] = { 20.0, 0.0 };
-    static constexpr double kMoveWidth = 0.6;   // semitones from its band's note where a bent note changes band
+    static constexpr double kMoveWidth = 0.6;
+    static constexpr int kNeighbourAge = 6;        // hops (32 ms) a single note must have played,
+    static constexpr float kNeighbourLevel = 1.5f; // ... to end a note within two semitones under this share of it   // semitones from its band's note where a bent note changes band
 
     // A spectrum of the newest samples: a Hann window and a radix-2 FFT, the bins' levels (a sine of level 1 reads 1)
     // and their noise floors
@@ -596,7 +601,7 @@ private:
                 hasPeak = true;
         }
         const bool alone = monoBand >= 0 && hasPeak;
-        if (alone && fMono.clear())
+        if (alone && (fMono.clear() || fMono.repeating()))
             fSinceClear = 0;
         else if (!alone || ++fSinceClear > fClearHops || std::fabs(12.0 * std::log2(fMonoHz / fClearHz)) > 1.5)
             fSinceClear = 1 << 20;
@@ -823,6 +828,29 @@ private:
                 note.found = true;
                 note.mono = true;
                 note.own = note.level = std::max(note.level, 0.5f * fEnvelope);
+            }
+        }
+
+        // One note playing alone, by the single-note tracker, for a while: a quieter note (or not much louder) a
+        // semitone or two from it is the same string, the pitch before (a low string picked hard starts sharp while
+        // the long spectrum still has the pitch it had; a slide, a hammer-on), not a note of its own. (Not in the
+        // single-note tracker's first hops: a chord's notes can read as one for a moment, the Em's B2 as a C3.)
+        if (single && fMonoAge >= kNeighbourAge)
+        {
+            int own = -1;
+            for (const int d : { 0, -1, 1 })
+            {
+                const int b = monoBand + d;
+                if (own < 0 && b >= 0 && b < kBands && fTracks[static_cast<size_t>(b)].active
+                    && fTracks[static_cast<size_t>(b)].found && fTracks[static_cast<size_t>(b)].mono)
+                    own = b;
+            }
+            for (int d = -2; d <= 2 && own >= 0; ++d)
+            {
+                const int b = own + d;
+                if (d != 0 && b >= 0 && b < kBands && fTracks[static_cast<size_t>(b)].active
+                    && fTracks[static_cast<size_t>(b)].level < kNeighbourLevel * fTracks[static_cast<size_t>(own)].level)
+                    fTracks[static_cast<size_t>(b)] = Track {};
             }
         }
 

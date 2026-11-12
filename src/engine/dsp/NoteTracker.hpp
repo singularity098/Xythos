@@ -37,6 +37,10 @@ namespace xythos {
 //   rings down a few dB a second; a finger stops it in 50 to 100 ms, its pitch rising meanwhile, which used to play as
 //   a run of semitones). And a note an octave or more below the playing one, without a pick, only while the level
 //   holds (a string being stopped falls away at twice its period for a moment).
+// - A low note being repeated starts up to 2 semitones sharp at each pick: for 80 ms after the pick that pitch doesn't
+//   take over, and the note coming back without a pick is still the repeated one (owner's recordings, 2026-11-12).
+// - A note held 500 ms and decayed 6 dB plays on through estimates near its octave or two octaves, with no pick and
+//   no swell: its harmonics, once its fundamental has died away (a bass's low B after seven seconds).
 // - The Pick Filter: a new note must also hold its pitch for that long before it sounds.
 // - Lookahead (optional, up to kMaxLookaheadMs): the output is that much behind the input, and the block delays
 //   its audio to match (reporting the latency). Each note then starts back at its pick, at the pitch found
@@ -71,6 +75,8 @@ public:
         fMuteAge = static_cast<int64_t>(0.08 * sampleRate);
         fRepeatGap = static_cast<int64_t>(0.25 * sampleRate);
         fRepeatHold = static_cast<int64_t>(0.15 * sampleRate);
+        fSharpAttack = static_cast<int64_t>(0.08 * sampleRate);
+        fOvertoneAge = static_cast<int64_t>(0.5 * sampleRate);
         fAverageCoef = 1.0f - EnvelopeFollower::coef(sampleRate, 3.0);
         fClickFilter.setHighPass(sampleRate, 2000.0);
         fClickDetector.prepare(sampleRate);
@@ -124,6 +130,8 @@ public:
         fCandidate = Candidate {};
         fPickPending = false;
         fRepeating = fHeldThrough = false;
+        fRepeatHz = 0.0;
+        fOvertoneHeld = false;
         fLastPick = 0;
         fStartTime = 0;
         fPickPeak = fVelocity = 0.0f;
@@ -249,7 +257,21 @@ public:
     const Note& note() const { return fOut; }
 
     // A note is playing and its pitch is clear right now: one note, not a chord (for the poly note finder)
-    bool clear() const { return fOn && fTracker.voiced() && fTracker.ownPeriod() && fTracker.aperiodicity() < kSingle; }
+    // (or held through its own harmonic's period: overtone())
+    bool clear() const
+    {
+        return fOn && (fOvertoneHeld || (fTracker.voiced() && fTracker.ownPeriod() && fTracker.aperiodicity() < kSingle));
+    }
+
+    // A low note is playing that is being picked over and over (a tremolo), its own period with a fairly clean pitch:
+    // one note, though not clear() between the picks (for the poly note finder: the 7-string's A1 picked fast grew
+    // chords out of its harmonics). Not over 200 Hz, nor less clean: a triad strummed over and over on the high
+    // strings reads as its top note repeated.
+    bool repeating() const
+    {
+        return fOn && fRepeating && fHz < kRepeatSingleHz && fTracker.ownPeriod() && fTracker.voiced()
+            && fTracker.aperiodicity() < kRepeatSingle;
+    }
 
     // Why the last note ended (for tests)
     enum class EndReason { None, Pick, Mute, Gate, Unclear, OtherPitch };
@@ -271,6 +293,13 @@ private:
     static constexpr float kMuteDrop = 0.1f;   // or 20 dB under the recent level (a mute)
     static constexpr double kRepeatWidth = 2.0; // semitones: a note picked again within this of its pitch is repeated (a
                                                 // low string picked hard starts over a semitone sharp)
+    static constexpr double kSharpAttackHz = 120.0; // a repeated note under this starts up to 2 semitones sharp at each
+                                                    // pick (a bass's E1 read F#1 and G1 for 40-80 ms)
+    static constexpr double kRepeatSingleHz = 200.0; // a repeated note under this, its pitch cleaner than
+    static constexpr float kRepeatSingle = 0.12f;    // this, is one note alone (repeating())
+    static constexpr double kOvertoneWidth = 1.5;    // semitones around an octave or two over a long-held note,
+    static constexpr float kOvertoneRise = 1.1f;     // with the level not rising over this share of the last 32 ms',
+    static constexpr float kOvertoneDecay = 0.5f;    // and 6 dB or more under its peak: its harmonics (overtone())
     static constexpr float kMuteFall = 0.35f;  // or 9 dB under its level 64 ms before, once it's 80 ms old (a mute)
     static constexpr int kMaxMisses = 4;       // other pitches in a row that end the note without a new one
     static constexpr float kDoubtful = 0.1f;   // a new note less clear than this needs another estimate,
@@ -372,6 +401,19 @@ private:
             }
             return;
         }
+        if (fOn && hz > 0.0 && overtone(hz))
+        {
+            // within a semitone and a half of a long-held note's octave or two octaves, without a pick, the note decayed
+            // and its level not rising: the tracker taking the note's harmonics for its period as its fundamental
+            // dies away (owner's recordings, bass-sustain: a low B after seven seconds wobbled between A#1 and C2
+            // every 12 ms, each a new note). The note plays on.
+            fLastVoiced = fTime;
+            fMisses = 0;
+            fCandidate = Candidate {};
+            fOvertoneHeld = true;
+            return;
+        }
+        fOvertoneHeld = false;
         if (hz <= 0.0 || aperiodicity > kClear)
         {
             // no clear pitch (a chord, a scrape, the decay): the note plays on, for a while
@@ -405,13 +447,31 @@ private:
         // stopped by a finger falls away at twice its period for a moment)
         const bool below = fOn && !fPickPending && fCandidate.hz < 0.6 * fHz
                         && fEnvelope < kBelowLevel * fLevels[static_cast<size_t>(fLevelPos)];
-        const bool confirmed = !fMuted && fCandidate.count >= needed() && fTime - fCandidate.start >= fPickHold
+        // (a low note being repeated, just picked again, read up to 2 semitones sharp: its pick, not a new note)
+        const bool sharpAttack = fOn && fHeldThrough && fHz < kSharpAttackHz && fCandidate.hz > fHz
+                              && semitones(fCandidate.hz, fHz) < kRepeatWidth && fTime - fLastPick < fSharpAttack;
+        const bool confirmed = !fMuted && !sharpAttack && fCandidate.count >= needed() && fTime - fCandidate.start >= fPickHold
                             && fClickTime < 0 && (fPickPending || fEnvelope >= kLegatoLevel * recentLevel()) && !hum
                             && !below;
         if (fOn && (confirmed || (fMisses >= kMaxMisses && !holding())))
             end(fFirstMiss - static_cast<int64_t>(0.004 * fSampleRate), EndReason::OtherPitch);
         if (confirmed)
             start();
+    }
+
+    // A pitch near the 2nd or 4th harmonic of the playing note, held 500 ms and decayed 6 dB, with no pick and no
+    // swell: its harmonics, not a note. (A note picked an octave up through a high-gain amp shows no pick and no
+    // swell, but it comes at the note's full level.)
+    bool overtone(double hz) const
+    {
+        if (fPickPending || fClickTime >= 0 || fTime - fStartTime < fOvertoneAge || hz < fHz
+            || fEnvelope > kOvertoneDecay * fPeak || fEnvelope > kOvertoneRise * recentLevel())
+            return false;
+        const double interval = 12.0 * std::log2(hz / fHz);
+        for (const double h : { 12.0, 24.0 })
+            if (std::fabs(interval - h) < kOvertoneWidth)
+                return true;
+        return false;
     }
 
     // The highest level of the last 32 ms' estimates
@@ -460,9 +520,18 @@ private:
         if (fPickPending)
             begin = fPickTime;
         begin = std::clamp<int64_t>(begin, fTime - fLookahead, fTime);
-        // picked again at the pitch it had, soon after: a note being repeated, which plays on through its next picks
-        fRepeating = fPickPending && fEndReason != EndReason::Gate && fTime - fEndTime < fRepeatGap && fHz > 0.0
-                  && semitones(fCandidate.hz, fHz) < kRepeatWidth;
+        // picked again at the pitch it had, soon after: a note being repeated, which plays on through its next picks.
+        // (A low one back without a pick, after another pitch took over for a moment: still that note, its pick
+        // read sharp; it went on losing its next picks.)
+        const bool wasRepeating = fRepeating && fTime - fLastPick < fRepeatGap && fRepeatHz > 0.0 && fRepeatHz < kSharpAttackHz
+                               && semitones(fCandidate.hz, fRepeatHz) < kRepeatWidth;
+        fRepeating = (fPickPending && fEndReason != EndReason::Gate && fTime - fEndTime < fRepeatGap && fHz > 0.0
+                      && semitones(fCandidate.hz, fHz) < kRepeatWidth)
+                  || (!fPickPending && wasRepeating && fEndReason == EndReason::OtherPitch);
+        if (!fRepeating)
+            fRepeatHz = 0.0;
+        else if (!wasRepeating)
+            fRepeatHz = fCandidate.hz;
         fHeldThrough = false;
         fOn = true;
         fStartTime = fTime;
@@ -487,6 +556,7 @@ private:
     // Ends the note from `from` (back to at most the lookahead)
     void end(int64_t from, EndReason reason)
     {
+        fOvertoneHeld = false;
         fOn = false;
         fEndTime = fTime;
         fEndReason = reason;
@@ -523,6 +593,9 @@ private:
     int64_t fMuteAge = 3840;
     bool fRepeating = false;   // the note is being picked over and over
     bool fHeldThrough = false; // ... and is playing on through a pick, its pitch not found again yet
+    double fRepeatHz = 0.0;    // ... at this pitch
+    int64_t fSharpAttack = 4800, fOvertoneAge = 24000;
+    bool fOvertoneHeld = false; // the last estimate was the playing note's harmonic (overtone())
     int64_t fLastPick = 0, fRepeatGap = 12000, fRepeatHold = 7200;
     int64_t fUnvoicedLimit = 1680;
     int fMisses = 0;
