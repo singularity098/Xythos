@@ -43,7 +43,7 @@
     - Tempo is independent of the DAW by default; a switch syncs tempo and transport to the DAW instead
     - Keyboard shortcuts only apply while the plugin window has focus
 - Has a linear signal chain which runs from left to right, where users can add NAM, IR, or built-in effects, up to a maximum of 32 blocks
-- Near the metronome and tuner is another button which links to my other free application Fretbored: https://singularity098.github.io/fretbored/
+- ~~Near the metronome and tuner is another button which links to my other free application Fretbored~~ (owner, 2026-11-13: removed, with the GitHub link, as clutter)
 - The buttons at the top right of the window (Fretbored, metronome, tuner, settings, bypass) are icons that show what they do; the Fretbored button uses the Fretbored app icon (owner's request, 2026-10-22; redrawn from its updated icon, 2026-10-29: the fretboard grid with the notes spelling an F)
 - A GitHub button (the GitHub mark, in the icons' hairline style) next to the Fretbored button opens the project's GitHub page, https://github.com/singularity098/xythos (owner's request, 2026-10-23)
 - Every knob and control has a highly detailed but easy to understand plain-English explanation of what it does and how to use it, shown in a translucent popup when the mouse hovers over it (owner's request, 2026-10-22)

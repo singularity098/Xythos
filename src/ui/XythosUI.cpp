@@ -217,8 +217,6 @@ enum class Hit {
     MetroResetAccents,
     Tap,          // tap tempo
     FaceSwitch,   // a pedal image's footswitch; index = position in the chain: turn the block on or off
-    Fretbored,    // open the Fretbored web app
-    GitHub,       // open the project's GitHub page
     A2Size,       // index = position in the chain
     Lookahead,    // index = position in the chain: a menu of the lookaheads
     Quality,      // index = position in the chain: toggles the "hq" config
@@ -391,8 +389,6 @@ struct ChainLayout {
     std::vector<DropPoint> drops;
 };
 
-constexpr const char* kFretboredUrl = "https://singularity098.github.io/fretbored/";
-constexpr const char* kGitHubUrl = "https://github.com/singularity098/xythos";
 constexpr int kNoteValues[4] = { 2, 4, 8, 16 };
 
 // Beat groupings, as in Fretbored. A grouping is stored as a bit mask of the beats that start a group.
@@ -1684,14 +1680,6 @@ protected:
 
         case Hit::Tap:
             tap();
-            return true;
-
-        case Hit::Fretbored:
-            openUrl(kFretboredUrl);
-            return true;
-
-        case Hit::GitHub:
-            openUrl(kGitHubUrl);
             return true;
 
         case Hit::Step:
@@ -5247,7 +5235,7 @@ private:
         fHits.push_back({ r, kind, index });
     }
 
-    enum class Icon { Power, Gear, TuningFork, Metronome, Loop, Fretbored, GitHub, Up, Home, Star, Folder };
+    enum class Icon { Power, Gear, TuningFork, Metronome, Loop, Up, Home, Star, Folder };
 
     // A square button with an icon instead of a label
     void drawIconButton(const Rect& r, Icon icon, bool on, Hit kind, int index)
@@ -5353,75 +5341,6 @@ private:
             bezierTo(cx - 9.0f, cy + 5.0f, cx - 3.0f, cy + 5.0f, cx, cy);
             bezierTo(cx + 3.0f, cy - 5.0f, cx + 9.0f, cy - 5.0f, cx + 9.0f, cy);
             bezierTo(cx + 9.0f, cy + 5.0f, cx + 3.0f, cy + 5.0f, cx, cy);
-            stroke();
-            break;
-
-        case Icon::Fretbored:
-        {
-            // the Fretbored app icon (its assets/icon.svg, a 120-unit square; its Ring look since 2026-10-30), flat in
-            // the icon colour like the others: five strings and three frets, faint, and the notes spelling an F as
-            // rings, its root note's ring heavier. A little larger than the other icons (28 px), so the rings stay open.
-            const float k = 28.0f / 120.0f;
-            const float x0 = cx - 14.0f, y0 = cy - 14.0f;
-            beginPath();
-            for (const float y : { 22.0f, 41.0f, 60.0f, 79.0f, 98.0f })
-            {
-                moveTo(x0 + 14.0f * k, y0 + y * k);
-                lineTo(x0 + 106.0f * k, y0 + y * k);
-            }
-            strokeColor(color.withAlpha(color.alpha * 0.3f));
-            strokeWidth(1.0f);
-            stroke();
-            beginPath();
-            for (const float x : { 43.0f, 65.0f, 87.0f })
-            {
-                moveTo(x0 + x * k, y0 + 12.0f * k);
-                lineTo(x0 + x * k, y0 + 108.0f * k);
-            }
-            strokeColor(color.withAlpha(color.alpha * 0.15f));
-            strokeWidth(1.0f);
-            stroke();
-            // the rings are filled dark first, so the strings don't show through them
-            constexpr float notes[][2] = { { 32, 41 }, { 32, 60 }, { 32, 79 }, { 32, 98 }, { 54, 22 },
-                                           { 76, 22 }, { 98, 22 }, { 54, 60 }, { 76, 60 } };
-            beginPath();
-            for (const auto& n : notes)
-                circle(x0 + n[0] * k, y0 + n[1] * k, 7.5f * k);
-            circle(x0 + 32.0f * k, y0 + 22.0f * k, 8.5f * k);
-            NanoVG::fillColor(Color(0x0e, 0x10, 0x14));
-            fill();
-            strokeColor(color);
-            strokeWidth(0.8f);
-            stroke();
-            beginPath();
-            circle(x0 + 32.0f * k, y0 + 22.0f * k, 8.5f * k);
-            strokeWidth(1.3f);
-            stroke();
-            strokeWidth(1.2f);
-            break;
-        }
-
-        case Icon::GitHub:
-            // the GitHub mark in outline: a ring, and inside it the cat's head with its ears, its neck running
-            // down to the ring and its tail curling out to the left
-            beginPath();
-            circle(cx, cy, 9.5f);
-            stroke();
-            beginPath();
-            moveTo(cx - 1.8f, cy + 9.3f);
-            lineTo(cx - 1.8f, cy + 4.6f);
-            bezierTo(cx - 3.8f, cy + 4.0f, cx - 4.6f, cy + 2.4f, cx - 4.6f, cy + 0.4f);
-            bezierTo(cx - 4.6f, cy - 0.8f, cx - 4.3f, cy - 1.6f, cx - 3.8f, cy - 2.2f);
-            lineTo(cx - 3.8f, cy - 5.0f);
-            lineTo(cx - 1.8f, cy - 3.7f);
-            bezierTo(cx - 0.6f, cy - 4.0f, cx + 0.6f, cy - 4.0f, cx + 1.8f, cy - 3.7f);
-            lineTo(cx + 3.8f, cy - 5.0f);
-            lineTo(cx + 3.8f, cy - 2.2f);
-            bezierTo(cx + 4.3f, cy - 1.6f, cx + 4.6f, cy - 0.8f, cx + 4.6f, cy + 0.4f);
-            bezierTo(cx + 4.6f, cy + 2.4f, cx + 3.8f, cy + 4.0f, cx + 1.8f, cy + 4.6f);
-            lineTo(cx + 1.8f, cy + 9.3f);
-            moveTo(cx - 1.8f, cy + 6.4f);
-            bezierTo(cx - 3.4f, cy + 6.9f, cx - 4.2f, cy + 5.4f, cx - 5.4f, cy + 5.0f);
             stroke();
             break;
 
@@ -5700,14 +5619,6 @@ private:
             return { "Browse",
                      "Opens your system's file dialog to add a NAM model (or, in IR, a cab IR) from anywhere on your "
                      "computer, outside the library folder." };
-        case Hit::GitHub:
-            return { "Xythos on GitHub",
-                     "Opens Xythos's page on GitHub in your web browser: the source code, new releases, and the "
-                     "place to report a bug or suggest a feature." };
-        case Hit::Fretbored:
-            return { "Fretbored",
-                     "Opens Fretbored in your web browser: a free app for learning the guitar neck, with scales, "
-                     "chords, arpeggios, the circle of fifths, a fretboard trainer, a tuner and a metronome." };
         default:
             return {};
         }
@@ -6505,14 +6416,14 @@ private:
     void drawTopBar()
     {
         surface(0, 0, fWidth, kTopBarHeight, 0.0f, Surface::Bar);
-        // the logo at full size from ~1000 px wide; narrower windows shrink it so the links still fit (see below)
-        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 682.0f);
+        // the logo at full size from ~1000 px wide; narrower windows shrink it so the buttons still fit
+        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 590.0f);
 
         // preset menu with the preset's name (• when changed since it was saved or opened)
         constexpr float bh = 36.0f, by = (kTopBarHeight - bh) / 2;
         const std::string preset = presetName() + (presetModified() ? " •" : "");
-        // narrower on a small window, so the icon buttons on the right (316 px with both links) still fit
-        const float presetWidth = std::clamp(fWidth - 316.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
+        // narrower on a small window, so the icon buttons on the right (224 px) still fit
+        const float presetWidth = std::clamp(fWidth - 224.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
                                              280.0f);
         const Rect presetButton { logoRight + 28.0f, by, presetWidth, bh };
         fPresetButtonX = presetButton.x;
@@ -6529,7 +6440,6 @@ private:
         if (!fUndo.canRedo())
             fillRect(redo.x, redo.y, redo.w, redo.h, theme::background.withAlpha(0.6f), 6.0f);
 
-        float bannerEnd = redo.x + redo.w;
         if (fLearnParam >= 0)
         {
             const std::string text = "MIDI learn: move a controller for " + paramName(fLearnParam) + "  (Esc cancels)";
@@ -6566,19 +6476,9 @@ private:
         drawChevron(metroPanel.x + metroPanel.w / 2, metroPanel.y + metroPanel.h / 2,
                     fMetroPanel ? theme::accent : theme::text);
 
-        // a new release: after Redo (not during MIDI learn, which shows its message there), before the links
+        // a new release: after Redo (not during MIDI learn, which shows its message there), up to the metronome
         if (const std::optional<std::string> update = availableUpdate(); update && fLearnParam < 0)
-            bannerEnd = drawUpdateBanner(redo.x + redo.w + 16.0f, metro.x - 12.0f, by, bh, *update);
-
-        // the links, Fretbored and then GitHub, as far as there's room: past the Redo button (and the update
-        // banner), and not at all next to the MIDI learn message unless the window is wide
-        const float room = fLearnParam >= 0 && fWidth < 1200.0f ? metro.x : bannerEnd + 12.0f;
-        const Rect fretbored { metro.x - step, by, iw, bh };
-        const Rect github { fretbored.x - step, by, iw, bh };
-        if (fretbored.x >= room)
-            drawIconButton(fretbored, Icon::Fretbored, false, Hit::Fretbored, 0);
-        if (github.x >= room)
-            drawIconButton(github, Icon::GitHub, false, Hit::GitHub, 0);
+            drawUpdateBanner(redo.x + redo.w + 16.0f, metro.x - 12.0f, by, bh, *update);
     }
 
     // The logo (LogoImage.cpp: the crop circle and the wordmark, with their glow), its left edge at x and centred on
