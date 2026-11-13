@@ -6506,13 +6506,13 @@ private:
     {
         surface(0, 0, fWidth, kTopBarHeight, 0.0f, Surface::Bar);
         // the logo at full size from ~1000 px wide; narrower windows shrink it so the links still fit (see below)
-        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 728.0f);
+        const float logoRight = drawLogo(10.0f, kTopBarHeight / 2, fWidth - 682.0f);
 
         // preset menu with the preset's name (• when changed since it was saved or opened)
         constexpr float bh = 36.0f, by = (kTopBarHeight - bh) / 2;
         const std::string preset = presetName() + (presetModified() ? " •" : "");
-        // narrower on a small window, so the icon buttons on the right (362 px with both links) still fit
-        const float presetWidth = std::clamp(fWidth - 362.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
+        // narrower on a small window, so the icon buttons on the right (316 px with both links) still fit
+        const float presetWidth = std::clamp(fWidth - 316.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
                                              280.0f);
         const Rect presetButton { logoRight + 28.0f, by, presetWidth, bh };
         fPresetButtonX = presetButton.x;
@@ -6538,13 +6538,13 @@ private:
         }
         // icon buttons on the right; hovering shows what they do
         constexpr float iw = 40.0f, step = 46.0f;
-        const Rect bypass { fWidth - 16.0f - iw, by, iw, bh };
-        drawIconButton(bypass, Icon::Power, fParams[kParamBypass] >= 0.5f, Hit::Toggle, kParamBypass);
-        drawIconButton({ bypass.x - step, by, iw, bh }, Icon::Gear, fDialog == Dialog::Settings, Hit::OpenSettings, 0);
-        drawIconButton({ bypass.x - 2 * step, by, iw, bh }, Icon::TuningFork, fParams[kParamTuner] >= 0.5f,
+        // no global bypass button (owner, 2026-11-13: the DAW's own bypass does it; the parameter stays for hosts)
+        const Rect anchor { fWidth - 16.0f - iw + step, by, iw, bh };
+        drawIconButton({ anchor.x - step, by, iw, bh }, Icon::Gear, fDialog == Dialog::Settings, Hit::OpenSettings, 0);
+        drawIconButton({ anchor.x - 2 * step, by, iw, bh }, Icon::TuningFork, fParams[kParamTuner] >= 0.5f,
                        Hit::Toggle, kParamTuner);
         // the looper (owner, 2026-11-01): opens its page; a dot in the state's colour while it records or plays
-        const Rect loop { bypass.x - 3 * step, by, iw, bh };
+        const Rect loop { anchor.x - 3 * step, by, iw, bh };
         drawIconButton(loop, Icon::Loop, fLooperPanel, Hit::LooperPanel, 0);
         if (const LooperReport report = looperReport(); report.state != LooperState::Empty)
         {
@@ -6556,7 +6556,7 @@ private:
 
         // Metronome: on/off, flashing on every beat, and ▾ for its panel
         const bool running = fParams[kParamMetronome] >= 0.5f;
-        const Rect metro { bypass.x - 4 * step - 30.0f, by, iw, bh };
+        const Rect metro { anchor.x - 4 * step - 30.0f, by, iw, bh };
         drawIconButton(metro, Icon::Metronome, running, Hit::Toggle, kParamMetronome);
         const float pulse = beatPulse();
         if (running && pulse > 0.0f)
