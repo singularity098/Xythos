@@ -171,6 +171,7 @@ add_library(xythos-engine STATIC
   src/engine/blocks/FilterBlock.cpp
   src/engine/blocks/FlangerBlock.cpp
   src/engine/blocks/GateBlock.cpp
+  src/engine/blocks/HumEliminatorBlock.cpp
   src/engine/blocks/InstrumentBlocks.cpp
   src/engine/blocks/IrBlock.cpp
   src/engine/blocks/LooperBlock.cpp
@@ -362,6 +363,7 @@ if(XYTHOS_BUILD_TESTS)
     tests/InkTests.cpp
     tests/IrBlockTests.cpp
     tests/LibraryTests.cpp
+    tests/HumEliminatorTests.cpp
     tests/MetronomeTests.cpp
     tests/MidiOutTests.cpp
     tests/MorePedalTests.cpp

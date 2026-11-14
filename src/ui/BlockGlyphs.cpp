@@ -365,6 +365,13 @@ const std::map<std::string, Draw>& drawings()
              b.line(96, 98);
              b.polyline({ { 72, 80 }, { 72, 116 } });
          } },
+        { "humeliminator", [](Builder& b) { // a single-coil pickup over a buzz that ends in a clean, flat line
+             b.rect(30, 72, 94, 88);
+             for (int k = 0; k < 6; ++k)
+                 b.dot(37.0f + 10.0f * k, 80.0f, 2.5f);
+             b.polyline({ { 28, 106 }, { 32, 98 }, { 36, 114 }, { 40, 98 }, { 44, 114 }, { 48, 98 }, { 52, 114 },
+                          { 56, 98 }, { 60, 106 }, { 96, 106 } });
+         } },
         { "volume", [](Builder& b) { b.polyline({ { 28, 116 }, { 96, 116 }, { 96, 80 } }, true); } },
         { "swell", [](Builder& b) { b.polyline({ { 96, 80 }, { 28, 98 }, { 96, 116 } }); } }, // a crescendo
         { "killswitch", [](Builder& b) { // a power symbol

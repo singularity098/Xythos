@@ -21,6 +21,7 @@
 #include "engine/blocks/FilterBlock.hpp"
 #include "engine/blocks/FlangerBlock.hpp"
 #include "engine/blocks/GateBlock.hpp"
+#include "engine/blocks/HumEliminatorBlock.hpp"
 #include "engine/blocks/InstrumentBlocks.hpp"
 #include "engine/blocks/IrBlock.hpp"
 #include "engine/blocks/LooperBlock.hpp"
@@ -108,6 +109,7 @@ const BlockRegistry& BlockRegistry::builtin()
         &kFetLimiterBlockDescriptor,
         &kSquashCompBlockDescriptor,
         &kGateBlockDescriptor,
+        &kHumEliminatorBlockDescriptor,
         &kVolumeBlockDescriptor,
         &kSwellBlockDescriptor,
         &kKillSwitchBlockDescriptor,

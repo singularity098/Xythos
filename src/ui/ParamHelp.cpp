@@ -500,6 +500,17 @@ constexpr BlockHelp kBlockHelp[] = {
       "guitar before the whole chain, so a gate placed after a high-gain amp follows your real playing, not the "
       "amp's noise." },
 
+    // Hum Eliminator
+    { "humeliminator", "Amount",
+      "How much of the hum it has learnt is taken away. 100% removes all of it; lower it only if you want some of "
+      "the hum back. Your guitar's sound isn't touched at any setting: only the hum is subtracted." },
+    { "humeliminator", "Adapt",
+      "How fast the learnt hum follows changes, while you're not playing. Short (0.2 s) catches up quickly when you "
+      "turn or move and the hum changes; long (1-2 s) takes away more of a steady hum. 0.5 s suits most rooms." },
+    { "humeliminator", "Mains",
+      "Your mains power's frequency: 60 Hz in North America and parts of South America and Asia, 50 Hz in Europe, "
+      "Africa, Australia and most of Asia. The hum comes from it, so it has to match." },
+
     // Volume
     { "volume", "Volume",
       "The volume, from silence (0%) to full (100%). Map an expression pedal to it with MIDI learn (right-click the "
@@ -2209,6 +2220,11 @@ constexpr TypeHelp kTypeHelp[] = {
       "A noise gate that silences hiss and hum when you stop playing. Put it after high-gain blocks, or set Key to "
       "Rig In so it listens to your guitar before any drive, which keeps it from chopping off sustained notes. Raise "
       "Threshold until the noise between notes disappears, but not so far that quiet notes get cut." },
+    { "humeliminator",
+      "Takes away the 60 Hz (or 50 Hz) hum and buzz that single-coil pickups pick up, which high gain makes so loud, "
+      "without filtering your guitar: it learns the hum's exact waveform whenever you stop playing, follows its timing, "
+      "and subtracts it, so your tone stays exactly as it was. Put it first in the chain, before any drive or amp. "
+      "Give it a second of not playing to learn the hum when you start." },
     { "volume",
       "A volume pedal. Map Volume to an expression pedal with MIDI learn (right-click the knob) to fade in, swell or "
       "turn down. Before drive blocks it changes how hard they're hit; after them it only changes the level. Audio "

@@ -88,3 +88,12 @@ until a note is found, the notes' time, the time a note is missing (after 60 ms 
 in every octave, and the stray notes and their time, split into a semitone or two off a played note, harmonics of
 one, below one, and other. The single-note tracker is scored one note at a time: a chord counts as found when any
 of its notes plays.
+
+## Hum (`hum/`)
+
+The owner's Strandberg Boden 7 (Fishman Fluence Abasi pickups), 2026-11-14, for the Hum Eliminator
+(`docs/Architecture.md` 4.11): the same short phrase on the bridge and the neck pickup, each in its humbucker and its
+single-coil voicing, with a second or two of not playing before and after. 96 kHz 24-bit FLAC, as the owner sent
+them. The single coils hum at about -72 dBFS RMS (60 Hz harmonics, strongest between 2 and 10 kHz), the humbuckers'
+floor is -84 to -97. No note lists: they're not part of the tracking benchmark (`tools/decode_recordings.sh` skips
+the folder).
