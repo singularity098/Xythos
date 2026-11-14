@@ -28,7 +28,7 @@
 - Has a built-in very high performance and high accuracy tuner, with traditional or strobe modes. The tuner can be toggled on with a button in the top-right of the window.  The guitar sound is by default muted when the tuner is engaged, but the mute also can be toggled on or off
     - The tuner reads the dry input (before the signal chain), with a gain boost so that quiet inputs are not a problem
     - Adjustable reference pitch (A4 = 415–466 Hz, default 440)
-    - Views (owner, 2026-11-02, from a third round of mockups asking for futuristic, a little alien): Arc, a needle of lightning that crackles more the further off the pitch and is a straight green beam in tune (it moves all the time while a note plays, an exception to "no animation"), and Aurora, a strobe of three curtains of light drifting the way of the error. Runes stays as the third view. (Were the Vernier and Chevrons, 2026-10-31; first drawn in the knobs' style, 2026-10-23)
+    - Views (owner, 2026-11-02, from a third round of mockups asking for futuristic, a little alien): Arc, a needle (owner, 2026-11-14: a plain one; was a needle of lightning that crackled more the further off the pitch, moving all the time while a note played), and Aurora, a strobe of three curtains of light drifting the way of the error. Runes stays as the third view. (Were the Vernier and Chevrons, 2026-10-31; first drawn in the knobs' style, 2026-10-23)
     - Accuracy target: ±0.1 cent, from a 5-string bass's low B (31 Hz) up to the 24th fret of a guitar's high E string
 - Also has a built-in metronome which can be toggled on and off from a button next to the tuner. It has the same features as the metronome in Fretbored (https://github.com/singularity098/fretbored):
     - Tempo 20–300 BPM, tap tempo

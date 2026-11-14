@@ -2114,7 +2114,7 @@ protected:
         if (fLooperPanel || looperReport().state != LooperState::Empty)
             repaint();
 
-        // the tuner animates (needle easing, strobe, the Arc's bolt)
+        // the tuner animates (needle easing, strobe)
         const float dt = std::min(0.1f, std::chrono::duration<float>(now - fLastIdle).count());
         fLastIdle = now;
         if (fParams[kParamTuner] >= 0.5f)
@@ -2123,9 +2123,6 @@ protected:
             fNeedleCents += (target - fNeedleCents) * std::min(1.0f, dt * 12.0f);
             for (int row = 0; row < 3; ++row)
                 fStrobePhase[row] += target * 5.0f * static_cast<float>(1 << row) * dt;
-            // the bolt writhes faster the further off the pitch
-            fTunerClock += dt;
-            fArcPhase += dt * (6.0 + std::min(std::fabs(fNeedleCents), 50.0f) / 50.0f * 10.0);
             repaint();
         }
 
@@ -7561,51 +7558,9 @@ private:
     void beginAdditive() { nvgGlobalCompositeBlendFuncSeparate(getContext(), NVG_ONE, NVG_ONE, NVG_ZERO, NVG_ONE); }
     void endAdditive() { nvgGlobalCompositeOperation(getContext(), NVG_SOURCE_OVER); }
 
-    // A colour gradients can take: the highlight with a window gradient on becomes the paint's colour at (x, y)
-    Color plainColor(const Color& color, float x, float y) const
-    {
-        if (!isInk(color))
-            return color;
-        Color c = highlightAt(x, y);
-        c.alpha = color.alpha;
-        return c;
-    }
-
-    // A soft round glow, drawn additively by the caller
-    void glowAt(float x, float y, float radius, const Color& color, float alpha)
-    {
-        beginPath();
-        circle(x, y, radius);
-        fillPaint(radialGradient(x, y, 0.0f, radius, color.withAlpha(alpha), color.withAlpha(0.0f)));
-        fill();
-    }
-
-    // 0..1 from two integers, for the Arc's noise
-    static float tunerHash(uint32_t a, uint32_t b)
-    {
-        uint32_t h = a * 0x9E3779B1u ^ (b + 0x7F4A7C15u) * 0x85EBCA77u;
-        h ^= h >> 15;
-        h *= 0x2C1B3C6Du;
-        h ^= h >> 12;
-        h *= 0x297A2D39u;
-        h ^= h >> 15;
-        return static_cast<float>(h >> 8) / 16777216.0f;
-    }
-
-    // Smooth noise, -1..1: value i drifts from one random target to the next as t passes each whole number
-    static float tunerNoise(uint32_t i, double t)
-    {
-        const double f = std::floor(t);
-        const float u = static_cast<float>(t - f), s = u * u * (3.0f - 2.0f * u);
-        const auto k = static_cast<uint32_t>(static_cast<int64_t>(f));
-        return (tunerHash(i, k) * (1.0f - s) + tunerHash(i, k + 1) * s) * 2.0f - 1.0f;
-    }
-
     // Needle: Arc (owner, 2026-11-02; needle concept 4 of the third round of tuner mockups, turned to point up). A
-    // bolt of lightning is the needle: from a pivot at the bottom to a ±50 cent scale arc. The further off the pitch,
-    // the more it writhes and forks; it calms as the pitch comes in, and in tune it is a straight green beam on the
-    // centre mark. The bolt moves all the time while a note plays, at the frame rate (fArcPhase; the owner asked for
-    // it, an exception to "no animation"); its shape is smooth noise, so it flows rather than jumps.
+    // plain needle from a pivot at the bottom to a ±50 cent scale arc, green in tune (owner, 2026-11-14: was a bolt of
+    // lightning that writhed further off the pitch).
     void drawArc(const Rect& r, bool active, bool inTune, const Color& color)
     {
         constexpr float kPi = static_cast<float>(M_PI);
@@ -7640,70 +7595,21 @@ private:
                       ALIGN_CENTER | ALIGN_MIDDLE);
         }
 
+        // the needle: a plain tapered line from the pivot to the scale, in the state colour (green in tune)
         if (active)
         {
             const float a = angle(cents);
-            const float tx = px + std::cos(a) * (R - 4.0f), ty = py + std::sin(a) * (R - 4.0f);
-            const float off = std::min(std::fabs(cents), 50.0f) / 50.0f;
-            const float rough = inTune ? 0.0f : (std::pow(off, 0.8f) * 26.0f + 0.6f) * s;
-            const double t = fArcPhase;
-
-            // a bolt from (x0, y0) to (x1, y1): n + 1 points pushed sideways by noise, most in the middle
-            constexpr int kMain = 26, kFork = 8;
-            auto bolt = [&](uint32_t seed, float amp, float x0, float y0, float x1, float y1, int n, float* xs,
-                            float* ys) {
-                const float nx = -(y1 - y0), ny = x1 - x0, length = std::max(1e-3f, std::hypot(nx, ny));
-                for (int i = 0; i <= n; ++i)
-                {
-                    const float u = static_cast<float>(i) / static_cast<float>(n);
-                    const uint32_t id = seed * 50u + static_cast<uint32_t>(i);
-                    const float o = (tunerNoise(id, t + seed * 0.3) + 0.35f * tunerNoise(id + 500u, t * 2.3))
-                                    * amp * std::sin(u * kPi);
-                    xs[i] = x0 + (x1 - x0) * u + nx / length * o;
-                    ys[i] = y0 + (y1 - y0) * u + ny / length * o;
-                }
-            };
-            // a polyline with a glow: two wide faint passes under a fine bright one
-            auto glowLine = [&](const float* xs, const float* ys, int n, float width, float strength) {
-                for (const auto& [w, alpha] : { std::pair { 7.0f, 0.06f }, { 3.2f, 0.16f }, { 1.0f, 0.9f } })
-                {
-                    beginPath();
-                    moveTo(xs[0], ys[0]);
-                    for (int i = 1; i <= n; ++i)
-                        lineTo(xs[i], ys[i]);
-                    strokeColor(color.withAlpha(alpha * strength));
-                    strokeWidth(width * w);
-                    stroke();
-                }
-            };
-
-            float mx[kMain + 1], my[kMain + 1];
-            bolt(1, rough, px + std::cos(a) * 12.0f, py + std::sin(a) * 12.0f, tx, ty, kMain, mx, my);
-            lineJoin(ROUND);
-            beginAdditive();
-            glowLine(mx, my, kMain, 1.3f, 1.0f);
-            // forks fade in and out on their own clocks, fewer and fainter close to pitch
-            for (int f = 0; f < 3; ++f)
-            {
-                const double p = fTunerClock * (1.6 + f * 0.4) + f / 3.0;
-                const float life = std::sin(static_cast<float>(p - std::floor(p)) * kPi);
-                const float strength = life * std::min(1.0f, rough / (10.0f * s));
-                if (strength < 0.02f)
-                    continue;
-                const auto sd = static_cast<uint32_t>(static_cast<int64_t>(std::floor(p)) * 7 + f * 13);
-                const int at = 6 + static_cast<int>(tunerHash(sd, 1) * 16.0f);
-                const float fx = mx[at], fy = my[at];
-                const float len = 24.0f * s + rough * 2.2f * tunerHash(sd, 2);
-                const float fa = std::atan2(ty - fy, tx - fx) + (tunerHash(sd, 3) - 0.5f) * 1.8f;
-                float bx[kFork + 1], by[kFork + 1];
-                bolt(static_cast<uint32_t>(f + 2), rough * 0.4f, fx, fy, fx + std::cos(fa) * len,
-                     fy + std::sin(fa) * len, kFork, bx, by);
-                glowLine(bx, by, kFork, 0.8f, 0.7f * strength);
-            }
-            glowAt(tx, ty, 32.0f * s, plainColor(color, tx, ty), 0.5f);
-            glowAt(px, py, 28.0f * s, plainColor(color, px, py), 0.35f);
-            endAdditive();
-            lineJoin(MITER);
+            const float ca = std::cos(a), sa = std::sin(a);
+            const float tx = px + ca * (R - 4.0f), ty = py + sa * (R - 4.0f);
+            const float half = 2.5f;
+            beginPath();
+            moveTo(px - sa * half, py + ca * half);
+            lineTo(tx - sa * 0.6f, ty + ca * 0.6f);
+            lineTo(tx + sa * 0.6f, ty - ca * 0.6f);
+            lineTo(px + sa * half, py - ca * half);
+            closePath();
+            fillColor(color);
+            fill();
         }
 
         // the pivot
@@ -7828,25 +7734,46 @@ private:
         const float horizon = r.y + std::max(120.0f, r.h * 0.6f);
         const float sx = std::max(r.w, 200.0f) / 520.0f, sy = (horizon - r.y) / 238.0f;
         const float x0 = r.x, x1 = r.x + r.w, fade = 60.0f * sx;
-        const float step = std::max(3.0f, r.w / 240.0f);
         constexpr float kTau = 2.0f * static_cast<float>(M_PI);
         struct Layer { float alpha, wave, amp; };
         constexpr Layer kLayers[3] = { { 0.9f, 150.0f, 26.0f }, { 0.7f, 92.0f, 18.0f }, { 0.5f, 58.0f, 12.0f } };
+        // where curtain k's lower edge is at x
+        auto curtainBottom = [&](int k, float x) {
+            const float kf = static_cast<float>(k);
+            const float ph = fStrobePhase[k] * 0.22f * sx, wave = kLayers[k].wave * sx, amp = kLayers[k].amp * sy;
+            const float base = horizon - (32.0f + 14.0f * kf) * sy;
+            return base + std::sin((x - ph) / wave * kTau) * amp
+                   + std::sin((x - ph * 0.6f) / (wave * 2.3f) * kTau + kf) * amp * 0.6f;
+        };
 
-        scissor(r.x, r.y, r.w, horizon - r.y + 1.0f);
-        beginAdditive();
+        // The rays are rendered into an image at the screen's own resolution, in float, and dithered down to 8 bits:
+        // NanoVG's gradients, faint and dark, came out in visible bands (owner, 2026-11-14), and drawing a ray per few
+        // pixels left stripes where neighbouring rays differed.
+        const float scale = static_cast<float>(uiScale());
+        const float top = r.y, height = horizon - r.y;
+        const int W = std::clamp(static_cast<int>(std::ceil(r.w * scale)), 1, 4096);
+        const int H = std::clamp(static_cast<int>(std::ceil(height * scale)), 1, 2048);
+        if (fAuroraW != W || fAuroraH != H)
+        {
+            fAuroraW = W;
+            fAuroraH = H;
+            fAuroraLight.assign(static_cast<size_t>(W) * H * 3, 0.0f);
+            fAuroraPixels.assign(static_cast<size_t>(W) * H * 4, 255);
+            fAuroraImage.reset();
+        }
+        else
+            std::fill(fAuroraLight.begin(), fAuroraLight.end(), 0.0f);
+        const float pxW = r.w / static_cast<float>(W), pxH = height / static_cast<float>(H);
+
         for (int k = 0; k < 3; ++k)
         {
             const Layer& L = kLayers[k];
             const float kf = static_cast<float>(k);
-            const float ph = fStrobePhase[k] * 0.22f * sx, wave = L.wave * sx, amp = L.amp * sy;
-            const float base = horizon - (32.0f + 14.0f * kf) * sy;
-            auto bottom = [&](float x) {
-                return base + std::sin((x - ph) / wave * kTau) * amp
-                       + std::sin((x - ph * 0.6f) / (wave * 2.3f) * kTau + kf) * amp * 0.6f;
-            };
-            for (float x = x0; x <= x1; x += step)
+            const float ph = fStrobePhase[k] * 0.22f * sx, wave = L.wave * sx;
+            auto bottom = [&](float x) { return curtainBottom(k, x); };
+            for (int i = 0; i < W; ++i)
             {
+                const float x = x0 + (static_cast<float>(i) + 0.5f) * pxW;
                 const float edge = std::clamp(std::min(x - x0, x1 - x) / fade, 0.0f, 1.0f);
                 if (edge <= 0.0f)
                     continue;
@@ -7854,13 +7781,67 @@ private:
                 const float h = (70.0f + 50.0f * (0.5f + 0.5f * std::sin((x - ph) / (wave * 1.7f) * kTau + 2.0f + kf))) * sy;
                 const float fold = 0.35f + 0.65f * std::pow(0.5f + 0.5f * std::sin((x - ph * 1.3f) / (9.0f * sx) + kf * 2.0f), 3.0f);
                 const Color c = !active ? Color(0.33f, 0.33f, 0.36f) : inTune ? theme::good : highlightAt(x, y - h * 0.3f);
-                beginPath();
-                moveTo(x, y);
-                lineTo(x, y - h);
-                strokePaint(linearGradient(x, y, x, y - h, c.withAlpha(0.45f * L.alpha * edge * fold), c.withAlpha(0.0f)));
-                strokeWidth(step);
-                stroke();
+                const float gain = 0.45f * L.alpha * edge * fold;
+                const float cr = c.red * gain, cg = c.green * gain, cb = c.blue * gain;
+                // the ray fades from its foot (yb, in pixels) up to nothing hh pixels higher
+                const float yb = (y - top) / pxH, hh = std::max(1.0f, h / pxH);
+                const int j0 = std::max(0, static_cast<int>(std::floor(yb - hh)));
+                const int j1 = std::min(H - 1, static_cast<int>(std::floor(yb)));
+                float* column = &fAuroraLight[static_cast<size_t>(i) * 3];
+                for (int j = j0; j <= j1; ++j)
+                {
+                    const float centre = static_cast<float>(j) + 0.5f;
+                    const float cover = std::min(1.0f, yb - static_cast<float>(j)); // the foot's pixel, partly
+                    const float v = std::max(0.0f, 1.0f - std::max(0.0f, yb - centre) / hh) * cover;
+                    float* px = column + static_cast<size_t>(j) * W * 3;
+                    px[0] += cr * v;
+                    px[1] += cg * v;
+                    px[2] += cb * v;
+                }
             }
+        }
+        // to 8 bits with a fixed noise of under one step added first, so the steps dissolve instead of banding
+        static const auto dither = [] {
+            std::array<float, 64 * 64> table {};
+            for (uint32_t n = 0; n < table.size(); ++n)
+            {
+                uint32_t h = n * 0x9E3779B1u + 0x7F4A7C15u;
+                h ^= h >> 15;
+                h *= 0x2C1B3C6Du;
+                h ^= h >> 12;
+                h *= 0x297A2D39u;
+                h ^= h >> 15;
+                table[n] = static_cast<float>(h >> 8) / 16777216.0f;
+            }
+            return table;
+        }();
+        for (int j = 0; j < H; ++j)
+        {
+            const float* light = &fAuroraLight[static_cast<size_t>(j) * W * 3];
+            uint8_t* out = &fAuroraPixels[static_cast<size_t>(j) * W * 4];
+            const float* noise = &dither[static_cast<size_t>(j & 63) * 64];
+            for (int i = 0; i < W; ++i)
+            {
+                const float d = noise[i & 63];
+                for (int ch = 0; ch < 3; ++ch)
+                    out[i * 4 + ch] = static_cast<uint8_t>(std::min(255.0f, light[i * 3 + ch] * 255.0f + d));
+            }
+        }
+        if (fAuroraImage == nullptr)
+            fAuroraImage = std::make_unique<NanoImage>(createImageFromRGBA(W, H, fAuroraPixels.data(), 0));
+        else
+            fAuroraImage->update(fAuroraPixels.data());
+
+        scissor(r.x, r.y, r.w, horizon - r.y + 1.0f);
+        beginAdditive();
+        beginPath();
+        rect(x0, top, r.w, height);
+        fillPaint(imagePattern(x0, top, r.w, height, 0.0f, *fAuroraImage, 1.0f));
+        fill();
+        for (int k = 0; k < 3; ++k)
+        {
+            const Layer& L = kLayers[k];
+            auto bottom = [&](float x) { return curtainBottom(k, x); };
             // the curtain's lower edge
             beginPath();
             for (float x = x0; x <= x1; x += 4.0f)
@@ -10492,8 +10473,10 @@ private:
     float fTunerCents = 0.0f;
     float fNeedleCents = 0.0f;
     float fStrobePhase[3] {};
-    double fTunerClock = 0.0; // seconds while the tuner is open, for the Arc's forks
-    double fArcPhase = 0.0;   // the Arc's noise time: runs faster the further off the pitch
+    std::unique_ptr<NanoImage> fAuroraImage; // the Aurora's rays, rendered each frame (drawAurora())
+    std::vector<float> fAuroraLight;         // their light in float, RGB
+    std::vector<uint8_t> fAuroraPixels;      // and dithered to RGBA
+    int fAuroraW = 0, fAuroraH = 0;
     int fTunerNote = -1; // MIDI note
     std::chrono::steady_clock::time_point fTunerSeenAt;
     std::chrono::steady_clock::time_point fLastIdle = std::chrono::steady_clock::now();

@@ -2590,9 +2590,8 @@ constexpr GlobalHelp kGlobalHelp[] = {
       "The pitch of A4 that the tuner tunes to. 440 Hz is standard; change it only to play along with something "
       "tuned differently." },
     { "tuner_strobe",
-      "Arc: a needle of lightning from the bottom up to a scale of 50 cents either way, left when you're flat and "
-      "right when you're sharp. The further off you are, the wilder it crackles; it calms as you tune in, and in "
-      "tune it's a straight green beam on the centre mark. Aurora: a strobe of three curtains of light, the note "
+      "Arc: a needle from the bottom up to a scale of 50 cents either way, left when you're flat and right when "
+      "you're sharp; in tune it points at the centre mark and turns green. Aurora: a strobe of three curtains of light, the note "
       "and the two octaves above it, drifting right when you're sharp and left when you're flat, faster the further "
       "out you are. In tune they hang still and turn green." },
     { "tuner_chevrons",
