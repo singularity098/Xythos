@@ -52,6 +52,13 @@ namespace xythos {
 // - A new note without a pick is judged against the last 60 ms' level, not 32 ms' (a string being stopped falls
 //   steadily, and its sliding pitch started notes), unless it's the note that plays or just ended coming back, a
 //   pick was heard in the last 150 ms, or its pitch is very clear (a pull-off).
+// - Pick scrapes (owner's recordings, 2026-11-17): a pick touching the string before it plucks it rings the string
+//   for 10 to 70 ms, a clear pitch, often octaves up, at a tenth of the note's level, and played as a blip before the
+//   note. A picked note found while none plays (not the last one coming back) under 15% of the picked notes' level
+//   lately must hold its pitch 40 ms first. (Not without a pick: a decayed note found again after a wrong pitch; not
+//   over 15%: a palm-muted chug among brighter ones.) And the level doubling within two estimates while a note plays is
+//   a pick too: the click detectors rest 60 ms after the scrape's click, so the real pick went unheard and the
+//   scrape's note played on through it.
 // - The Pick Filter: a new note must also hold its pitch for that long before it sounds.
 // - Lookahead (optional, up to kMaxLookaheadMs): the output is that much behind the input, and the block delays
 //   its audio to match (reporting the latency). Each note then starts back at its pick, at the pitch found
@@ -95,6 +102,8 @@ public:
         fClickDetector.prepare(sampleRate);
         fClickDetector.setThreshold(0.002f);
         fDefaultHold = static_cast<int>(0.015 * sampleRate);
+        fLoudAge = static_cast<int64_t>(0.08 * sampleRate);
+        fFaintHold = static_cast<int64_t>(kFaintHoldMs * 0.001 * sampleRate);
         setPickFilter(fPickMs);
         setLookahead(fLookaheadMs);
         reset();
@@ -117,6 +126,10 @@ public:
         fPickMs = ms;
         fPickHold = static_cast<int64_t>(std::lround(ms * 0.001 * fSampleRate));
     }
+
+    // Whether a jump in the level while a note plays counts as a pick (it does by default). The poly note finder turns
+    // it off for its own tracker: its chord notes are let in the moment the single note ends.
+    void setSurgePicks(bool on) { fSurgePicks = on; }
 
     void reset()
     {
@@ -154,6 +167,8 @@ public:
         fEndTime = -fRecentNote;
         fLevels.fill(0.0f);
         fLevelPos = 0;
+        fLoud = fBeganLevel = 0.0f;
+        fPicked = false;
         fOut = Note {};
     }
 
@@ -166,6 +181,12 @@ public:
         // while a loud note rings
         bool clicked = fOnsetDetector.process(std::fabs(in));
         clicked = fClickDetector.process(std::fabs(fClickFilter.process(in))) || clicked;
+        // (the detectors rest 60 ms after a click, so a pick that soon after another click, the pick touching the
+        // string first, went unheard, and the note found in between played on through the attack: the level
+        // jumping to several times what it was two estimates ago is a pick too)
+        if (fSurgePicks && !clicked && fOn && fClickTime < 0 && fEnvelope > kSurge * fLevels[static_cast<size_t>((fLevelPos - 2 + kLevels) % kLevels)]
+            && fEnvelope > kSurge * fLevels[static_cast<size_t>((fLevelPos - 1 + kLevels) % kLevels)])
+            clicked = true;
         // A click ends the note at once, but it's only a pick (that may start one) once the level rises after it,
         // or holds up: a mute clicks too, and then the level falls (and its tail mustn't start a note)
         if (clicked && fClickTime < 0)
@@ -243,6 +264,9 @@ public:
                 fStartTime = fTime;
             }
         }
+        // how loud the picked notes are lately (each counts half: one bright note doesn't make the rest faint)
+        if (fOn && fPicked && fTime - fBeganTime == fLoudAge)
+            fLoud = fLoud <= 0.0f ? fBeganLevel : 0.5f * (fLoud + fBeganLevel);
         if (fOn && fEnvelope < kMuteDrop * fRecent)
         {
             // falling far faster than a ringing string does: muted. Its tail mustn't start a note again.
@@ -342,6 +366,9 @@ private:
     static constexpr float kPickRise = 1.25f;  // a click is a pick once the level rises this much,
     static constexpr float kClickPeakShare = 0.5f; // a wave's average level at its crests, against its peaks
     static constexpr float kPickHold = 0.3f;   // or once it has held over this share of its level for 12 ms
+    static constexpr float kFaint = 0.15f;    // a picked note under this share of the picked notes' level lately
+    static constexpr double kFaintHoldMs = 40.0; // must hold its pitch this long (a pick touching the string)
+    static constexpr float kSurge = 2.0f;     // the level jumping this much in two estimates is a pick the detectors missed
     static constexpr double kHumWidth = 0.2;  // semitones around 50 and 60 Hz where a new note needs a pick (G1 is
                                                // 0.37 under 50 Hz, A#1 and B1 0.5 around 60 Hz)
 
@@ -498,7 +525,13 @@ private:
         // level drops by half at once and stays.)
         const bool same = (fHz > 0.0 && (fOn || fTime - fEndTime < fRecentNote) && semitones(fCandidate.hz, fHz) < kSameWidth)
                        || fTime - fPickTime < fRecentNote || fCandidate.clarity < kPullOffClear;
+        // (A pick touching the string before it plucks it: the string rings for 10 to 70 ms in two short pieces, a
+        // clear pitch, often octaves up, at a tenth of the note's level. A picked note far quieter than the picked
+        // notes lately must hold its pitch that long first.)
+        const bool back = fHz > 0.0 && fTime - fEndTime < fRecentNote && semitones(fCandidate.hz, fHz) < kSameWidth;
+        const bool faint = !fOn && !back && fPickPending && fEnvelope < kFaint * fLoud;
         const bool confirmed = !fMuted && !sharpAttack && fCandidate.count >= needed() && fTime - fCandidate.start >= fPickHold
+                            && (!faint || fTime - fCandidate.start >= fFaintHold)
                             && fClickTime < 0 && (fPickPending || fEnvelope >= kLegatoLevel * recentLevel(same ? 8 : kLevels - 1)) && !hum
                             && !below;
         if (fOn && (confirmed || (fMisses >= kMaxMisses && !holding())))
@@ -590,6 +623,8 @@ private:
         fClearest = fCandidate.clarity;
         fPeak = fEnvelope;
         fVelocity = fPickPending ? std::max(fPickPeak, fEnvelope) : fEnvelope;
+        fPicked = fPickPending;
+        fBeganLevel = fEnvelope;
         fLastVoiced = fTime;
         for (int64_t t = begin; t <= fTime; ++t)
         {
@@ -665,6 +700,11 @@ private:
     Note fOut;
     EndReason fEndReason = EndReason::None;
     int64_t fEndTime = 0, fRecentNote = 7200;
+    bool fSurgePicks = true;
+    float fLoud = 0.0f;   // the picked notes' level lately (when they were found)
+    float fBeganLevel = 0.0f;
+    bool fPicked = false; // the playing note began with a pick
+    int64_t fLoudAge = 3840, fFaintHold = 2400;
     static constexpr int kLevels = 16; // 64 ms of estimates
     std::array<float, kLevels> fLevels {};
     int fLevelPos = 0;

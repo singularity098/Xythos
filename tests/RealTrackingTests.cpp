@@ -57,6 +57,8 @@ TEST_CASE("the poly note finder on the owner's recordings")
     // the next one is clear by its period; and the single-note tracker's changes of that day): strays 58.9 s -> 48.8 s,
     // missing 123.4 s -> 121.1 s, never found 54 (bass 17.7 -> 12.8 s of strays, guitar 24.9 -> 21.3 s, first clips
     // 16.3 -> 14.7 s); no clip lost 30 ms.
+    // 2026-11-17, pick scrapes (the single-note tracker holds back a faint picked note): strays 48.8 s -> 47.3 s,
+    // missing 121.1 s (bass 12.8 -> 12.5 s of strays, guitar 21.3 -> 20.2 s).
     const auto plain = realBench("poly note finder", polyFinder(0.0), false, false);
     const RealScore& first = plain.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 25);
@@ -67,15 +69,15 @@ TEST_CASE("the poly note finder on the owner's recordings")
     CHECK(guitar.missed <= 28);
     CHECK(guitar.missingMs <= 90000.0);
     CHECK(guitar.missingClassMs <= 16000.0);
-    CHECK(guitar.strayMs <= 22500.0);
+    CHECK(guitar.strayMs <= 21300.0);
     const RealScore& bass = plain.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 8);
     CHECK(bass.missingMs <= 5600.0);
     CHECK(bass.missingClassMs <= 5200.0);
-    CHECK(bass.strayMs <= 13800.0);
+    CHECK(bass.strayMs <= 13200.0);
     // a live input's hiss and hum (-66 dB) cost some of the quiet bass notes' time, and add few strays
     // (the filter bank with them: 199 s missing, 365 s of strays; before 2026-11-12: 156 s missing, 94 s of strays;
-    // before 2026-11-17: 153.4 s and 62.4 s, now 150.8 s and 51.8 s)
+    // before 2026-11-17: 153.4 s and 62.4 s, then 150.8 s and 51.8 s; with pick scrapes held back 150.8 s and 51.4 s)
     const auto noisy = realBench("poly note finder, with hiss and hum", polyFinder(0.0, 0.0005f), false, false);
     CHECK(noisy.total.missed <= 65);
     CHECK(noisy.total.missingMs <= 156000.0);
@@ -104,6 +106,8 @@ TEST_CASE("the note tracker on the owner's recordings")
     // show whether the level fell, and a pick-less new note judged against the last 60 ms' level (2026-11-17): 1
     // never found, 21.6 s missing, 22.5 s of strays (the bass 6.0 -> 4.7 s missing, 9.2 -> 6.9 s of strays; gtr-fast
     // 1.8 -> 1.0 s missing; bass-fast 3.0 -> 2.3 s missing, 1.6 -> 1.1 s of strays); no clip lost 30 ms.
+    // Pick scrapes (2026-11-17: a faint picked note holds its pitch 40 ms first, a jump in the level is a pick): 21.6 s
+    // missing, 21.0 s of strays (guitar 9.4 -> 8.5 s, bass 7.0 -> 6.5 s; gtr-frets-bridge 590 -> 257 ms).
     const auto mono = realBench("note tracker (mono)", monoTracker(0.0f, 0.0), true, false);
     const RealScore& first = mono.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 1);
@@ -113,11 +117,11 @@ TEST_CASE("the note tracker on the owner's recordings")
     const RealScore& guitar = mono.sets[static_cast<int>(ClipSet::Guitar)];
     CHECK(guitar.missed <= 1);
     CHECK(guitar.missingMs <= 10300.0);
-    CHECK(guitar.strayMs <= 9900.0);
+    CHECK(guitar.strayMs <= 9000.0);
     const RealScore& bass = mono.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 1);
     CHECK(bass.missingMs <= 5200.0);
-    CHECK(bass.strayMs <= 7500.0);
+    CHECK(bass.strayMs <= 6900.0);
 }
 
 TEST_CASE("the note tracker follows a melody's high notes over an open string ringing along")

@@ -104,6 +104,7 @@ public:
         for (int b = 0; b < kBands; ++b)
             fBandStep[static_cast<size_t>(b)] = 440.0 * std::exp2((kFirstNote + b - 69) / 12.0) / sampleRate;
         fMono.prepare(sampleRate);
+        fMono.setSurgePicks(false);
         fOnset.prepare(sampleRate);
         fClick.prepare(sampleRate);
         fClick.setThreshold(0.002f);

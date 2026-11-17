@@ -401,6 +401,50 @@ TEST_CASE("the note tracker doesn't chirp when the pick stops the string")
     CHECK(last == doctest::Approx(445.0).epsilon(0.01));
 }
 
+TEST_CASE("the note tracker doesn't play a pick scrape before the note")
+{
+    // A pick touching the string before it plucks it rings the string for a few tens of ms, a clear pitch, often a
+    // harmonic, at about a tenth of the note's level (the owner's recordings, 2026-11-17: gtr-frets-bridge had 43
+    // such blips). Here an A2 is picked and muted, then a G4 scrape at 8% of its level comes 30 ms before the A2 is
+    // picked again (the pick's scratch heard as a click): only A2 may sound.
+    const double rate = guitar::kRate;
+    const auto pluck = [](double hz, double t, double level) {
+        const double attack = 1.0 - std::exp(-t / 0.0005);
+        return static_cast<float>(level * attack * std::exp(-t / 1.5)
+                                  * (std::sin(2 * M_PI * hz * t) + 0.7 * std::sin(2 * M_PI * 2 * hz * t + 1.0)
+                                     + 0.4 * std::sin(2 * M_PI * 3 * hz * t + 2.0)));
+    };
+    std::vector<float> x;
+    for (int i = 0; i < static_cast<int>(0.4 * rate); ++i)
+        x.push_back(pluck(110.0, i / rate, 0.1));
+    x.resize(x.size() + static_cast<size_t>(0.4 * rate), 0.0f);
+    for (int i = 0; i < static_cast<int>(0.03 * rate); ++i)
+    {
+        const double t = i / rate;
+        // (the pick's scratch: a 2 ms click, which the tracker hears as a pick)
+        x.push_back(static_cast<float>(0.008 * (1.0 - std::exp(-t / 0.0005)) * std::exp(-t / 0.02)
+                                           * std::sin(2 * M_PI * 392.0 * t)
+                                       + 0.02 * std::exp(-t / 0.0005) * std::sin(2 * M_PI * 5000.0 * t)));
+    }
+    for (int i = 0; i < static_cast<int>(0.4 * rate); ++i)
+        x.push_back(pluck(110.0, i / rate, 0.1));
+    NoteTracker tracker;
+    tracker.prepare(rate);
+    double highest = 0.0;
+    bool second = false;
+    const size_t secondPick = static_cast<size_t>(0.83 * rate);
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        const NoteTracker::Note& note = tracker.process(x[i]);
+        if (note.on)
+            highest = std::max(highest, note.hz);
+        if (note.on && i > secondPick && std::fabs(12.0 * std::log2(note.hz / 110.0)) < 0.5)
+            second = true;
+    }
+    CHECK(highest < 120.0);
+    CHECK(second);
+}
+
 namespace {
 
 // Sets a pitch-following block to pass only its dry signal
