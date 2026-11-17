@@ -34,6 +34,12 @@ namespace xythos {
 //   picked over and over counts as clear too (NoteTracker::repeating()), and so does one held through its harmonics'
 //   period as its fundamental dies away. Once it has played alone 32 ms, notes a semitone or two from it that aren't
 //   1.5 times louder are the same string's pitch before (a sharp pick, a slide) and end (2026-11-12).
+// - Once that note has been clear for three hops in its first 210 ms, any other note as loud as 0.15 of the input is
+//   what the windows still hold of a note that has stopped (the note before, in a melody), and ends: a note really
+//   sounding that loud would blur the period, unless it is within 3.5 semitones of the note or of a harmonic of it
+//   (2026-11-17; later than 210 ms nothing is left over, and a chord's root can read as one clear note).
+// - A peak no higher than twice a louder bin's side lobe there is that bin's leakage, not a peak (a stopped note went
+//   on being found in the next note's side lobes, 30 to 40 dB down, for hundreds of ms).
 // - For chords the input is decimated to about 12 kHz, and every 5.3 ms (a hop) three spectra are taken of it (Hann
 //   windows): 171 ms long for what's under 150 Hz, where the partials of a low chord are 25 Hz apart (an open G's G2,
 //   B2 and D3), 85 ms up to 1 kHz, and 43 ms above. Their peaks (frequency and level from the two highest bins) are
@@ -119,6 +125,7 @@ public:
         fClearHops = static_cast<int>(std::lround(150.0 / fHopMs));
         fPickWindowHops = static_cast<int>(std::lround(kPickWindowMs / fHopMs));
         fOctaveHops = static_cast<int>(std::lround(300.0 / fHopMs));
+        fAloneHops = static_cast<int>(std::lround(kAloneMs / fHopMs));
         fRatioRise = static_cast<float>(std::pow(10.0, kRatioRiseDb / 20.0 * fHopMs / 1000.0));
         fRatioCoef = 1.0f - static_cast<float>(std::exp(-fHopMs / kRatioFollowMs));
         setLookahead(fLookaheadMs);
@@ -184,6 +191,7 @@ public:
         fFalling = fMonoWasOn = false;
         fSinceClear = 1 << 20;
         fMonoAge = 0;
+        fClearRun = 0;
         fMonoWasHz = 1.0;
     }
 
@@ -233,6 +241,13 @@ private:
     static constexpr int kMaxPeaks = 96;
     static constexpr int kPartials = 12;
     static constexpr int kMaxHarmonic = 40;
+    static constexpr int kLobeReach = 10;       // bins either side of a peak where a louder bin's side lobes are looked for,
+    static constexpr double kLobeMargin = 2.0;  // ... counted this many times a steady sine's (notes swell and die away)
+    static constexpr float kAloneShare = 0.15f; // a note this loud against the input, under one clear note: left over
+    static constexpr int kAloneRun = 3;         // ... once that one has been clear this many hops in a row,
+    static constexpr double kAloneNear = 3.5;   // unless it's within this many semitones of the note or of a harmonic of it,
+    static constexpr double kAloneLowHz = 70.0; // or an octave or two under it, below this;
+    static constexpr double kAloneMs = 210.0;   // and only this long after the clear note began
 
     static constexpr float kFloor = 0.0001f;    // a peak a note needs (-80 dBFS; DI recordings are quiet)
     static constexpr float kFloorGate = 4.0f;   // ... and 12 dB over its bins' noise floor
@@ -456,6 +471,19 @@ private:
             const float b = s.fLevel[i];
             if (b <= s.fLevel[i - 1] || b < s.fLevel[i + 1] || b < kFloor || b < kPeakRange * loudest)
                 continue;
+            // A louder sine's side lobes are peaks too (a Hann window's: -31 dB two and a half bins from it, -42 dB
+            // at three and a half, then 18 dB an octave): a peak no higher than those of a bin near it is its leakage.
+            // (A note that had stopped went on being found in the next note's, for hundreds of ms.)
+            bool leakage = false;
+            for (int d = 2; d <= kLobeReach && !leakage; ++d)
+            {
+                const double x = std::max(2.5, d - 0.5);
+                const auto lobe = static_cast<float>(kLobeMargin / (M_PI * x * (x * x - 1.0)));
+                leakage = (k - d >= 0 && b < lobe * s.fLevel[static_cast<size_t>(k - d)])
+                       || (k + d <= s.fSize / 2 && b < lobe * s.fLevel[static_cast<size_t>(k + d)]);
+            }
+            if (leakage)
+                continue;
             // A Hann window's peak from its two highest bins (Grandke): their ratio gives how far between them the
             // sine is, and its level. (A parabola through three bins was up to a quarter of a semitone off for a
             // low note, enough to miss its own harmonics.)
@@ -612,6 +640,28 @@ private:
             for (Track& track : fTracks)
                 if (track.active && !track.mono && !track.octave && track.age < fYoungHops)
                     track = Track {};
+
+        // One note clear right now, by its period: another note as loud as this would blur that period, unless it is
+        // within a few semitones of the note or at one of its harmonics (which leave the period nearly as it is). So
+        // any other is what's left in the windows of a note that has stopped (the note before, in a melody: it
+        // played on under the new one until the windows had passed it).
+        fClearRun = alone && fMono.clear() ? fClearRun + 1 : 0;
+        // (Only in the note's first 210 ms, a little over the longest window: after that nothing is left over, and
+        // a chord's root can read as one clear note while the chord rings.)
+        if (single && fClearRun >= kAloneRun && fMonoAge < fAloneHops)
+            for (int b = 0; b < kBands; ++b)
+            {
+                Track& track = fTracks[static_cast<size_t>(b)];
+                if (!track.active || track.mono || track.level < kAloneShare * fEnvelope)
+                    continue;
+                // (or an octave or two under it, on the low strings: their first periods read an octave up, and it is
+                // the string that plays)
+                const bool under = track.hz < kAloneLowHz && track.hz < fMonoHz;
+                const double ratio = under ? fMonoHz / track.hz : track.hz / fMonoHz;
+                const double off = std::fabs(12.0 * std::log2(ratio / std::max(1.0, std::round(ratio))));
+                if (off >= kAloneNear)
+                    track = Track {};
+            }
 
         // the peaks, lowest first: each is a note if enough of it is its own
         int count = 0;
@@ -1069,9 +1119,11 @@ private:
     int fSinceClear = 1 << 20, fClearHops = 28; // hops since the single-note tracker's note was clear; 150 ms
     double fClearHz = 440.0, fMonoWasHz = 1.0;
     int fMonoAge = 0; // hops the single-note tracker has been on this note
+    int fClearRun = 0; // hops in a row it has been clear
     int fWaitHops = 8; // how long after a pick new notes wait, this hop
     int fPickWindowHops = 75;
     int fOctaveHops = 56;
+    int fAloneHops = 39;
     int fLearnHops = 47, fLostHops = 8;
     bool fLearning = true;
     float fLearnCoef = 0.16f, fFloorFall = 0.02f, fRatioRise = 1.006f, fRatioCoef = 0.04f;

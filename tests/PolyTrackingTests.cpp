@@ -333,3 +333,54 @@ TEST_CASE("the poly note finder plays notes over a live input's hiss and hum to 
     CHECK(lastA3 > 3.3); // to the end: 3 s on, 36 dB down
 }
 
+
+TEST_CASE("the poly note finder ends a melody's note when the next one is played on its string")
+{
+    // The owner's recordings, 2026-11-17: in a melody each note went on sounding under the next, first for as long as
+    // the windows held it (85 to 171 ms), then 30 to 40 dB down for hundreds of ms more, found again and again in the
+    // new note's side lobes. Here: notes a third to a fifth apart on one string, each replacing the one before.
+    std::vector<guitar::Note> notes;
+    const int melody[] = { 48, 52, 55, 50, 57, 52, 48, 53 };
+    for (int k = 0; k < 8; ++k)
+    {
+        guitar::Note note;
+        note.midi = melody[k];
+        note.start = 0.4 + 0.45 * k;
+        note.length = 0.45;
+        note.string = 2;
+        note.velocity = 0.8f;
+        notes.push_back(note);
+    }
+    const guitar::Performance performance = guitar::perform(notes, 4.4);
+    PolyNoteFinder finder;
+    finder.prepare(guitar::kRate);
+    finder.setVoices(6);
+    finder.setFocus(std::exp2(6.0f * 0.7f - 3.0f));
+    finder.setPickFilter(15.0f);
+    // how long each note's band still sounds (at any level) after the next note's pick
+    std::vector<double> lingers(7, 0.0);
+    double worst = 0.0, sum = 0.0;
+    for (size_t t = 0; t < performance.signal.size(); ++t)
+    {
+        if (!finder.process(performance.signal[t]))
+            continue;
+        const PolyNoteFinder::Frame& f = finder.playFrame();
+        const double sec = static_cast<double>(t) / guitar::kRate;
+        for (int k = 0; k < 7; ++k)
+        {
+            const double next = notes[static_cast<size_t>(k + 1)].start;
+            const int band = melody[k] - PolyNoteFinder::kFirstNote;
+            if (sec >= next && sec < next + 0.45 && f.sounding[static_cast<size_t>(band)])
+                lingers[static_cast<size_t>(k)] = sec - next;
+        }
+    }
+    for (const double linger : lingers)
+    {
+        worst = std::max(worst, linger);
+        sum += linger;
+    }
+    MESSAGE("lingering: worst " << 1000.0 * worst << " ms, mean " << 1000.0 * sum / 7.0 << " ms");
+    // (before: 141 ms at worst, 80 ms on average; now 89 and 57)
+    CHECK(worst <= 0.11);
+    CHECK(sum / 7.0 <= 0.07);
+}

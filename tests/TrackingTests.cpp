@@ -324,6 +324,8 @@ TEST_CASE("the note tracker plays the benchmark's notes with few wrong or phanto
     // ringing the pitch is now the lowest note there (as for a chord), so a note picked above it isn't found. Without
     // that scene 1 missed and 27 wrong (0.5 s), and single notes are found in 12 ms with none wrong (was 2). On the
     // recordings, which count: 4.4% of the notes' time missing, was 25%.
+    // 2026-11-17 (a click in a repeated low note waits a period more before it's a mute): one phantom, 7 ms, a
+    // muted repeated note ending that much later.
     const std::vector<Score> clean = bench("note tracker", noteTracker(0.0f, 0.0, false), false, false, false);
     const Score& total = clean.back();
     CHECK(total.missed <= 10);
@@ -331,8 +333,8 @@ TEST_CASE("the note tracker plays the benchmark's notes with few wrong or phanto
     CHECK(total.wrong <= 38);
     CHECK(total.wrong - clean[3].wrong <= 28);
     CHECK(clean[0].wrong == 0); // single notes
-    CHECK(total.phantom <= 20);
-    CHECK(total.phantomMs <= 200.0);
+    CHECK(total.phantom <= 2);
+    CHECK(total.phantomMs <= 20.0);
     CHECK(clean[0].medianDelayMs <= 14.0); // single notes
 
     // after an amp, tracking the rig's input is as good as tracking the clean guitar
