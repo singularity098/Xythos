@@ -53,29 +53,34 @@ TEST_CASE("the poly note finder on the owner's recordings")
     // 2026-11-12 (the single-note tracker's note taken as one note alone in more cases: picked over and over, held
     // through its harmonics, and notes a semitone or two from it dropped): strays 86.1 s -> 58.9 s, missing 124.1 s ->
     // 123.4 s, never found 54 (bass 32.7 -> 17.7 s of strays, guitar 34.3 -> 24.9 s, first clips 19.1 -> 16.3 s).
+    // 2026-11-17 (a louder peak's side lobes are no peaks; what's left of the note before in the windows ends once
+    // the next one is clear by its period; and the single-note tracker's changes of that day): strays 58.9 s -> 48.8 s,
+    // missing 123.4 s -> 121.1 s, never found 54 (bass 17.7 -> 12.8 s of strays, guitar 24.9 -> 21.3 s, first clips
+    // 16.3 -> 14.7 s); no clip lost 30 ms.
     const auto plain = realBench("poly note finder", polyFinder(0.0), false, false);
     const RealScore& first = plain.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 25);
-    CHECK(first.missingMs <= 32000.0);
+    CHECK(first.missingMs <= 31000.0);
     CHECK(first.missingClassMs <= 4800.0);
-    CHECK(first.strayMs <= 17500.0);
+    CHECK(first.strayMs <= 15500.0);
     const RealScore& guitar = plain.sets[static_cast<int>(ClipSet::Guitar)];
     CHECK(guitar.missed <= 28);
-    CHECK(guitar.missingMs <= 92000.0);
-    CHECK(guitar.missingClassMs <= 17500.0);
-    CHECK(guitar.strayMs <= 26500.0);
+    CHECK(guitar.missingMs <= 90000.0);
+    CHECK(guitar.missingClassMs <= 16000.0);
+    CHECK(guitar.strayMs <= 22500.0);
     const RealScore& bass = plain.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 8);
-    CHECK(bass.missingMs <= 7000.0);
-    CHECK(bass.missingClassMs <= 6200.0);
-    CHECK(bass.strayMs <= 19500.0);
+    CHECK(bass.missingMs <= 5600.0);
+    CHECK(bass.missingClassMs <= 5200.0);
+    CHECK(bass.strayMs <= 13800.0);
     // a live input's hiss and hum (-66 dB) cost some of the quiet bass notes' time, and add few strays
-    // (the filter bank with them: 199 s missing, 365 s of strays; before 2026-11-12: 156 s missing, 94 s of strays)
+    // (the filter bank with them: 199 s missing, 365 s of strays; before 2026-11-12: 156 s missing, 94 s of strays;
+    // before 2026-11-17: 153.4 s and 62.4 s, now 150.8 s and 51.8 s)
     const auto noisy = realBench("poly note finder, with hiss and hum", polyFinder(0.0, 0.0005f), false, false);
     CHECK(noisy.total.missed <= 65);
-    CHECK(noisy.total.missingMs <= 160000.0);
-    CHECK(noisy.total.missingClassMs <= 65000.0);
-    CHECK(noisy.total.strayMs <= 67000.0);
+    CHECK(noisy.total.missingMs <= 156000.0);
+    CHECK(noisy.total.missingClassMs <= 62000.0);
+    CHECK(noisy.total.strayMs <= 55000.0);
 }
 
 TEST_CASE("the note tracker on the owner's recordings")
@@ -95,20 +100,24 @@ TEST_CASE("the note tracker on the owner's recordings")
     // 2 never found, 26.3 s missing (was 28.3 s), 1005 strays, 27.3 s (was 30.1 s). With a low note's sharp picks and
     // a long note's harmonics held as that note (2026-11-12): 24.0 s missing, 25.5 s of strays (the bass 8.3 -> 6.0 s
     // missing, 11.1 -> 9.2 s of strays; bass-sustain 3.0 s of both -> 0.1 s).
+    // With the reported pitch holding back from unclear estimates, a click in a repeated low note given a period to
+    // show whether the level fell, and a pick-less new note judged against the last 60 ms' level (2026-11-17): 1
+    // never found, 21.6 s missing, 22.5 s of strays (the bass 6.0 -> 4.7 s missing, 9.2 -> 6.9 s of strays; gtr-fast
+    // 1.8 -> 1.0 s missing; bass-fast 3.0 -> 2.3 s missing, 1.6 -> 1.1 s of strays); no clip lost 30 ms.
     const auto mono = realBench("note tracker (mono)", monoTracker(0.0f, 0.0), true, false);
     const RealScore& first = mono.sets[static_cast<int>(ClipSet::First)];
     CHECK(first.missed <= 1);
-    CHECK(first.missingMs <= 8600.0);
-    CHECK(first.strayMs <= 8400.0);
-    CHECK(first.straySubMs <= 7700.0); // (palm-muted power chords, an octave below: the mute's thump is their fundamental)
+    CHECK(first.missingMs <= 7600.0);
+    CHECK(first.strayMs <= 6600.0);
+    CHECK(first.straySubMs <= 6100.0); // (palm-muted power chords, an octave below: the mute's thump is their fundamental)
     const RealScore& guitar = mono.sets[static_cast<int>(ClipSet::Guitar)];
-    CHECK(guitar.missed <= 2);
-    CHECK(guitar.missingMs <= 11000.0);
-    CHECK(guitar.strayMs <= 10300.0);
+    CHECK(guitar.missed <= 1);
+    CHECK(guitar.missingMs <= 10300.0);
+    CHECK(guitar.strayMs <= 9900.0);
     const RealScore& bass = mono.sets[static_cast<int>(ClipSet::Bass)];
     CHECK(bass.missed <= 1);
-    CHECK(bass.missingMs <= 6600.0);
-    CHECK(bass.strayMs <= 10000.0);
+    CHECK(bass.missingMs <= 5200.0);
+    CHECK(bass.strayMs <= 7500.0);
 }
 
 TEST_CASE("the note tracker follows a melody's high notes over an open string ringing along")
