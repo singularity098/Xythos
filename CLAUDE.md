@@ -126,7 +126,8 @@ tests/recordings/     The owner's DI recordings and their note lists (<clip>.not
 docs/                 Requirements, architecture, the pedal image prompts (PedalImagePrompts.md), and the recordings asked of the owner
                       for note tracking, drop-A 7-string guitar and 5-string bass (RecordingList.md)
 cmake/                EmbedBlockImages.cmake: turns resources/blocks/*.webp into BlockImages.cpp at build time; EmbedFartSamples.cmake the Fart's WAVs
-resources/logo/       The logo: xythos.svg (the master; dark UI) and xythos-light.svg (for light backgrounds, the README), rendered to PNGs by
+resources/logo/       The logo: xythos.svg (the master; dark UI) and xythos-light.svg (for light backgrounds, the README), xythos-icon.svg
+                      (the app icon: the crop circle alone in the Iris gradient, crisp lines with no glow; owner, 2026-11-20), rendered to PNGs by
                       tools/render_logo.js (also xythos-mark.png and xythos-wordmark.png, the layers the plugin embeds) (Node + Playwright: the glows are SVG filters); tools/embed_logo.py makes LogoImage.cpp
 resources/fonts/      Jost (variable TTF + OFL.txt); tools/embed_font.py makes the Light and Regular instances into src/ui/FontData.cpp
 resources/pedals/     The generic pedal photos NAM pedal captures (and pedals awaiting their render) show, pedal-<n>.webp (1280 px high) and thumbs/ (384 px); made by tools/prepare_pedal_images.py
