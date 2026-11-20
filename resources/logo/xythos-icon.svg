@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 144 144">
+  <title>Xythos</title>
+  <defs>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="a"/><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="a"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g transform="translate(6 6)" fill="none" stroke="#a77bff" filter="url(#glow)">
+    <circle cx="60" cy="60" r="54" stroke-width=".9" stroke-dasharray="22 6"/>
+    <circle cx="60" cy="60" r="38" stroke-width=".6" opacity=".6"/>
+    <circle cx="60" cy="60" r="22" stroke-width="1.6"/>
+    <circle cx="60" cy="60" r="7" fill="#a77bff" stroke="none"/>
+    <path d="M60.00 38.00L60.00 22.00" stroke-width=".9"/><circle cx="60.00" cy="22.00" r="3.0" fill="#a77bff" stroke="none"/><path d="M79.05 49.00L92.91 41.00" stroke-width=".9"/><circle cx="92.91" cy="41.00" r="3.7" fill="#a77bff" stroke="none"/><path d="M79.05 71.00L92.91 79.00" stroke-width=".9"/><circle cx="92.91" cy="79.00" r="4.4" fill="#a77bff" stroke="none"/><path d="M60.00 82.00L60.00 98.00" stroke-width=".9"/><circle cx="60.00" cy="98.00" r="5.1" fill="#a77bff" stroke="none"/><path d="M40.95 71.00L27.09 79.00" stroke-width=".9"/><circle cx="27.09" cy="79.00" r="5.8" fill="#a77bff" stroke="none"/><path d="M40.95 49.00L27.09 41.00" stroke-width=".9"/><circle cx="27.09" cy="41.00" r="6.5" fill="#a77bff" stroke="none"/>
+  </g>
+</svg>
