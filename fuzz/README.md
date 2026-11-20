@@ -48,7 +48,7 @@ fuzz/run_all.sh 60                      # every target 60 s; corpora grow in fuz
 ./build-fuzz/xythos-fuzz-engine fuzz-work/engine fuzz/corpus/engine -max_total_time=600   # one target, longer
 ```
 
-CI runs the libFuzzer targets weekly and by hand (`.github/workflows/fuzz.yml`, 5 minutes each by default) and
+CI runs the libFuzzer targets only when started by hand (Actions → fuzz → Run workflow; no longer weekly since 2026-11-20) (`.github/workflows/fuzz.yml`, 5 minutes each by default) and
 uploads any crash.
 
 ## Adding a target

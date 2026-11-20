@@ -116,7 +116,7 @@ tests/                doctest unit tests; TestSupport.hpp has a test block and a
 fuzz/                 Fuzz targets (fuzz/README.md): every parser of outside input (chain state, presets and their zips, settings,
                       update check, WAV, IR, NAM, WebP, stb_image) and the engine under random host events. xythos-fuzz-replay
                       (a ctest: seed corpus fuzz/corpus/ + fixed mutations, any compiler); libFuzzer + ASan/UBSan binaries with
-                      -DXYTHOS_FUZZ=ON (clang), run by fuzz/run_all.sh and weekly in CI (.github/workflows/fuzz.yml)
+                      -DXYTHOS_FUZZ=ON (clang), run by fuzz/run_all.sh and in CI by hand only (.github/workflows/fuzz.yml; owner, 2026-11-20: no longer weekly)
 tests/recordings/     The owner's DI recordings and their note lists (<clip>.notes; README.md; hum/: single coil vs humbucker, 2026-11-14): eight guitar clips (MP3,
                       hand-made lists) and, since 2026-11-09, 26 of a 7-string in drop A and a 5-string bass (16-bit
                       FLAC; lists made by tools/annotate/annotate.sh from the audio, a <clip>.spec for chord clips and

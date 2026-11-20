@@ -1,10 +1,9 @@
 name: fuzz
 
-# The libFuzzer targets (fuzz/README.md) with ASan and UBSan, for a few minutes each: weekly, and by hand with a
-# chosen time. The quick replay of the seed corpus runs with the tests in every build (build.yml).
+# The libFuzzer targets (fuzz/README.md) with ASan and UBSan, for a few minutes each: by hand only, with a chosen
+# time (owner, 2026-11-20: no longer weekly). The quick replay of the seed corpus runs with the tests in every build
+# (build.yml).
 on:
-  schedule:
-    - cron: "17 3 * * 0"
   workflow_dispatch:
     inputs:
       seconds:
