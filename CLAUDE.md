@@ -184,7 +184,13 @@ The file browser opens in the host's working directory. Final checks happen in R
 
 ## Conventions
 
-- **Git: work directly on `main` until v1.0** (the owner's decision: Claude writes nearly all the code, so branches and PRs add little). Commit to `main` and push `main`, even when a session is set up with its own feature branch; no PRs unless the owner asks. Run the tests before every push, since there's no PR CI gate. Revisit after v1.0.
+- **Commit and push directly to `main`.** Don't create feature branches or open pull requests
+  unless the owner asks for one.
+- Claude Code setups (the web version especially) may create their own working branch for the
+  session. Even then, don't use that branch: commit on `main` and push `main`
+  (`git push origin HEAD:main`). Don't push the session branch.
+- This is a solo project: branches and PRs add very little here and create unwanted overhead.
+- Run the tests before every push, since there's no PR CI gate.
 
 - DPF style: classes in `START_NAMESPACE_DISTRHO`, members prefixed `f` in DPF subclasses, 4-space indent.
 - The audio thread (`run()` and everything it calls) must never allocate, lock or touch files. `activate()` and `run()` never overlap (a flag handshake in the plugin), and a non-finite chain output is silenced and makes the plugin rebuild the chain with fresh blocks (`Engine::takeChainFault()`; `docs/Architecture.md` 4.2). Heavy work (model loading, chain rebuilds, tuner analysis) happens on other threads and is handed over lock-free.
