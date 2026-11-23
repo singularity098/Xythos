@@ -3,3 +3,7 @@
 
 # FFTConvolver's default constructor memsets its zero-length buffers (a null pointer, length 0) on every IR load
 nonnull-attribute:FFTConvolver/Utilities.h
+
+# stb_image's PNG reader copies a zero-length IDAT chunk into its still-null data buffer (stbi__getn's memcpy,
+# a null pointer with length 0; harmless). Found by the stb_image target, 2026-11-15.
+nonnull-attribute:stb/stb_image.h
