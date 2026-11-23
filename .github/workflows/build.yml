@@ -92,7 +92,7 @@ jobs:
             build/bin/xythos.vst3
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       # Submodules are cached (keyed on their pinned commits) so GitLab, which hosts Eigen and is sometimes
