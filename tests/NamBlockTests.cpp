@@ -126,6 +126,29 @@ TEST_CASE("NAM block output level follows its parameters")
     CHECK(20.0f * std::log10(quieter / base) == doctest::Approx(-6.0f).epsilon(0.02));
 }
 
+// Settings > Normalized levels: a model's stored loudness (wavenet.nam: -20.0 dB) is brought to the level asked for
+TEST_CASE("NAM block normalizes to the level the settings give, and follows a change")
+{
+    std::unique_ptr<Block> block = loadBlock(exampleModel("wavenet.nam"));
+    REQUIRE(block);
+    block->setParam(kNamParamNormalize, 0.0f);
+    const float raw = rms(render(*block, 200), 12800);
+    block->setParam(kNamParamNormalize, 1.0f);
+    const float normalized = rms(render(*block, 200), 12800);
+    CHECK(20.0f * std::log10(normalized / raw) == doctest::Approx(-18.0f + 20.02f).epsilon(0.02));
+
+    int allocations = 0;
+    block->setNormalizeLevels({ -24.0f, 0.0f });
+    render(*block, 1, &allocations);
+    CHECK(allocations == 0);
+    const float quieter = rms(render(*block, 200), 12800);
+    CHECK(20.0f * std::log10(quieter / normalized) == doctest::Approx(-6.0f).epsilon(0.02));
+
+    // without Normalize the setting does nothing
+    block->setParam(kNamParamNormalize, 0.0f);
+    CHECK(rms(render(*block, 200), 12800) == doctest::Approx(raw).epsilon(0.001));
+}
+
 TEST_CASE("NAM block tone controls shape the output; blocks from before them stay flat")
 {
     for (const bool tone : { true, false })

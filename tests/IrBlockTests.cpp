@@ -245,3 +245,18 @@ TEST_CASE("IR block normalizes a cab to about unity on a guitar amp's spectrum, 
     REQUIRE(block);
     CHECK(std::fabs(levelChangeDb(*block)) < 1.5);
 }
+
+// Settings > Normalized levels
+TEST_CASE("IR block plays at the normalized level the settings give")
+{
+    std::unique_ptr<Block> block = loadIr(writeWav("cab-setting.wav", kRate, { cabLikeIr(kRate, 1.0f) }));
+    REQUIRE(block);
+    const double unity = levelChangeDb(*block);
+    block->setNormalizeLevels({ -18.0f, -6.0f });
+    CHECK(levelChangeDb(*block) - unity == doctest::Approx(-6.0).epsilon(0.02));
+    // without Normalize the setting does nothing: the file's own level
+    block->setParam(kIrParamNormalize, 0.0f);
+    const double raw = levelChangeDb(*block);
+    block->setNormalizeLevels({ -18.0f, 6.0f });
+    CHECK(levelChangeDb(*block) == doctest::Approx(raw).epsilon(0.001));
+}

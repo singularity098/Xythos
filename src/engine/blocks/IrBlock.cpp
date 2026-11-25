@@ -148,6 +148,14 @@ public:
         return fConvolvers[0] != nullptr;
     }
 
+    void setNormalizeLevels(const NormalizeLevels& levels) override
+    {
+        if (levels.irDb == fTargetDb)
+            return;
+        fTargetDb = levels.irDb;
+        fGain.setTarget(targetGain());
+    }
+
     void setParam(int index, float value) override
     {
         switch (index)
@@ -220,7 +228,10 @@ public:
     }
 
 private:
-    float targetGain() const { return dbToGain(fLevelDb) * (fNormalize ? fNormGain : 1.0f); }
+    float targetGain() const
+    {
+        return fNormalize ? dbToGain(fLevelDb + fTargetDb) * fNormGain : dbToGain(fLevelDb);
+    }
 
     // At the ends of their ranges the cut filters are off
     void updateFilters()
@@ -262,6 +273,7 @@ private:
     Biquad fHighPass[2], fLowPass[2];
 
     float fNormGain = 1.0f;
+    float fTargetDb = NormalizeLevels {}.irDb; // Settings: the normalized level
     float fLevelDb = 0.0f;
     float fMixValue = 1.0f;
     float fLowCut = 20.0f;

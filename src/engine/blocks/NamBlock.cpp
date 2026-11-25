@@ -79,6 +79,14 @@ public:
         return true;
     }
 
+    void setNormalizeLevels(const NormalizeLevels& levels) override
+    {
+        if (levels.namDb == fTargetLoudnessDb)
+            return;
+        fTargetLoudnessDb = levels.namDb;
+        fOutputGain.setTarget(targetOutputGain());
+    }
+
     void setParam(int index, float value) override
     {
         switch (index)
@@ -151,7 +159,7 @@ private:
     {
         float db = fOutputDb;
         if (fNormalize && fHasLoudness)
-            db += static_cast<float>(kNamTargetLoudnessDb - fLoudnessDb);
+            db += static_cast<float>(fTargetLoudnessDb - fLoudnessDb);
         return dbToGain(db);
     }
 
@@ -178,6 +186,7 @@ private:
     double fSampleRate = 48000.0;
     uint32_t fMaxFrames = 0;
     double fLoudnessDb = 0.0;
+    float fTargetLoudnessDb = NormalizeLevels {}.namDb;
     bool fHasLoudness = false;
     float fInputDb = 0.0f;
     float fOutputDb = 0.0f;

@@ -5,6 +5,7 @@
 
 #include "state/Paths.hpp"
 #include "state/Settings.hpp"
+#include "engine/Block.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -19,6 +20,8 @@ TEST_CASE("settings round-trip through JSON and a file")
     settings.a2Lite = true;
     settings.normalize = false;
     settings.parallel = false;
+    settings.namLevel = -22.0f;
+    settings.irLevel = 3.0f;
     settings.theme = "Glacier";
     settings.favorites = { "00112233445566778899aabbccddeeff", "ffeeddccbbaa99887766554433221100" };
     settings.embedFiles = false;
@@ -53,6 +56,14 @@ TEST_CASE("settings fall back to defaults for missing or broken values")
     CHECK(partial.a2Lite);
     CHECK(partial.theme == "Iris"); // wrong type: default
     CHECK(partial.normalize);
+
+    // levels are clamped to their ranges; a wrong type keeps the default
+    const Settings levels = Settings::fromJson(R"({"namLevel": -100, "irLevel": 1e39})");
+    CHECK(levels.namLevel == Settings::kNamLevelMin);
+    CHECK(levels.irLevel == Settings::kIrLevelMax);
+    CHECK(Settings::fromJson(R"({"namLevel": "loud", "irLevel": null})").namLevel == -18.0f);
+    CHECK(Settings {}.namLevel == NormalizeLevels {}.namDb);
+    CHECK(Settings {}.irLevel == NormalizeLevels {}.irDb);
 }
 
 TEST_CASE("paths convert to and from UTF-8")

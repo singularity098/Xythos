@@ -21,6 +21,13 @@ struct Settings {
     std::string irDir;
     bool a2Lite = false;         // default A2 size for new NAM blocks
     bool normalize = true;       // default normalization for new NAM and IR blocks
+    // The levels normalized blocks are brought to, in dB (owner, 2026-11-25), for every block in every project on
+    // this computer: a NAM model's stored loudness becomes namLevel (-30..-6), an IR plays at irLevel on a guitar
+    // amp's spectrum (-12..+12). The defaults are NormalizeLevels' (src/engine/Block.hpp).
+    float namLevel = -18.0f;
+    float irLevel = 0.0f;
+    static constexpr float kNamLevelMin = -30.0f, kNamLevelMax = -6.0f;
+    static constexpr float kIrLevelMin = -12.0f, kIrLevelMax = 12.0f;
     bool parallel = true;        // run split branch B on a second core
     // The look (ink::themes(); owner, 2026-11-08): a theme's name, Iris to start. It replaced the accent colour and the
     // highlight style and colours ("accent", "accentColor", "highlightStyle", "highlightColors", "savedColors"),

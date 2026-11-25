@@ -244,6 +244,7 @@ enum class Hit {
     SettingsRescan,
     SettingsA2,     // index = 1 for Lite
     SettingsNormalize,
+    SettingsLevel,  // index: 0/1 the NAM level down/up, 2/3 the IR level down/up
     SettingsParallel,
     SettingsTheme,  // index = position in ink::themes()
     SettingsUpdates, // the update check on/off
@@ -1324,6 +1325,18 @@ protected:
         case Hit::SettingsNormalize:
             updateSettings([](Settings& settings) { settings.normalize = !settings.normalize; });
             return true;
+
+        case Hit::SettingsLevel:
+            updateSettings([index = hit->index](Settings& settings) {
+                const float step = index % 2 == 0 ? -1.0f : 1.0f;
+                if (index < 2)
+                    settings.namLevel = std::clamp(std::round(settings.namLevel) + step, Settings::kNamLevelMin,
+                                                   Settings::kNamLevelMax);
+                else
+                    settings.irLevel = std::clamp(std::round(settings.irLevel) + step, Settings::kIrLevelMin,
+                                                  Settings::kIrLevelMax);
+            });
+            return true; // the DSP follows the settings file itself
 
         case Hit::SettingsParallel:
             updateSettings([](Settings& settings) { settings.parallel = !settings.parallel; });
@@ -5580,7 +5593,7 @@ private:
         case Hit::OpenSettings:
             return { "Settings",
                      "Opens the settings: the folders for your NAM and IR files, the default NAM A2 size, volume "
-                     "normalization for new blocks, parallel processing of a split on a second CPU core, the "
+                     "normalization for new blocks and the levels it brings NAM models and IRs to, parallel processing of a split on a second CPU core, the "
                      "daily check for a new version, touch mode for touchscreens, and the theme." };
         case Hit::UpdateOpen:
             return { "New Version",
@@ -10128,7 +10141,7 @@ private:
         const float controlX = x + 220.0f;
         const float controlW = x + w - 24.0f - controlX;
         float row = y + 64.0f;
-        constexpr float rowH = 44.0f;
+        constexpr float rowH = 40.0f;
         auto rowLabel = [&](const char* text) {
             label(labelX, row + 14.0f, text, theme::textDim, 13.0f, ALIGN_LEFT | ALIGN_MIDDLE);
         };
@@ -10170,6 +10183,23 @@ private:
                    theme::accent, Hit::SettingsNormalize, 0);
         label(controlX + 88.0f, row + 14.0f, "loudness normalization for new NAM and IR blocks", theme::textDim, 11.0f,
               ALIGN_LEFT | ALIGN_MIDDLE);
+        row += rowH;
+
+        // The levels normalized blocks are brought to (owner, 2026-11-25), 1 dB a click
+        rowLabel("Normalized levels");
+        auto levelControl = [&](float left, const char* name, float value, int hitBase) {
+            label(left, row + 14.0f, name, theme::textDim, 12.0f, ALIGN_LEFT | ALIGN_MIDDLE);
+            drawButton({ left + 34.0f, row, 28.0f, 28.0f }, "−", false, theme::accent, Hit::SettingsLevel, hitBase);
+            char text[16];
+            std::snprintf(text, sizeof(text), "%+.0f dB", static_cast<double>(value));
+            if (value == 0.0f)
+                std::snprintf(text, sizeof(text), "0 dB");
+            label(left + 100.0f, row + 14.0f, text, theme::text, 13.0f, ALIGN_CENTER | ALIGN_MIDDLE);
+            drawButton({ left + 138.0f, row, 28.0f, 28.0f }, "+", false, theme::accent, Hit::SettingsLevel, hitBase + 1);
+        };
+        levelControl(controlX, "NAM", fSettings.namLevel, 0);
+        levelControl(controlX + 190.0f, "IR", fSettings.irLevel, 2);
+        label(controlX + 380.0f, row + 14.0f, "for every project", theme::textDim, 11.0f, ALIGN_LEFT | ALIGN_MIDDLE);
         row += rowH;
 
         rowLabel("Multi-core splits");

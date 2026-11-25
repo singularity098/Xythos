@@ -127,6 +127,10 @@ public:
     // setChain() if no worker thread was started yet.
     void setParallelProcessing(bool enabled) { fParallel.store(enabled, std::memory_order_relaxed); }
 
+    // Any thread. The levels normalized NAM and IR blocks are brought to (Settings), clamped to their ranges; blocks
+    // follow from the next buffer, smoothly.
+    void setNormalizeLevels(NormalizeLevels levels);
+
 private:
     struct Node {
         std::shared_ptr<Block> block;
@@ -222,6 +226,8 @@ private:
     SpscQueue<Graph*, 8> fRetired;
     std::atomic<uint32_t> fLatency { 0 };
     std::atomic<bool> fParallel { true };
+    std::atomic<float> fNamLevel { NormalizeLevels {}.namDb };
+    std::atomic<float> fIrLevel { NormalizeLevels {}.irDb };
     std::atomic<bool> fChainFault { false };
     std::unique_ptr<ParallelWorker> fWorker; // started when a chain first needs it
 

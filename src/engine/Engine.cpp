@@ -236,6 +236,16 @@ bool Engine::setChain(const ChainState& chain, std::string* error, std::vector<i
     return true;
 }
 
+void Engine::setNormalizeLevels(NormalizeLevels levels)
+{
+    // a NaN from anywhere becomes the default
+    const NormalizeLevels defaults;
+    const float nam = std::isfinite(levels.namDb) ? levels.namDb : defaults.namDb;
+    const float ir = std::isfinite(levels.irDb) ? levels.irDb : defaults.irDb;
+    fNamLevel.store(std::clamp(nam, NormalizeLevels::kNamMinDb, NormalizeLevels::kNamMaxDb), std::memory_order_relaxed);
+    fIrLevel.store(std::clamp(ir, NormalizeLevels::kIrMinDb, NormalizeLevels::kIrMaxDb), std::memory_order_relaxed);
+}
+
 void Engine::forgetBlocks()
 {
     const std::lock_guard<std::mutex> lock(fMutex);
@@ -838,6 +848,7 @@ uint32_t Engine::processNodes(const std::vector<Node>& nodes, float* const* work
             node.restoreLatched = -1;
         }
         block.setTempo(fTempo);
+        block.setNormalizeLevels({ fNamLevel.load(std::memory_order_relaxed), fIrLevel.load(std::memory_order_relaxed) });
         if (fSongPlaying)
             block.setSongPosition(fSongBeat);
         const float* rig[2] = { fRigInput[0].data(), fRigInput[1].data() };

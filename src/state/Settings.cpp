@@ -8,6 +8,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+
 namespace xythos {
 
 using nlohmann::json;
@@ -29,6 +31,8 @@ std::string Settings::toJson() const
         { "irDir", irDir },
         { "a2Lite", a2Lite },
         { "normalize", normalize },
+        { "namLevel", namLevel },
+        { "irLevel", irLevel },
         { "parallel", parallel },
         { "theme", theme },
         { "favorites", favorites },
@@ -74,6 +78,14 @@ Settings Settings::fromJson(std::string_view text)
         get("irDir", settings.irDir);
         get("a2Lite", settings.a2Lite);
         get("normalize", settings.normalize);
+        auto getLevel = [&root](const char* key, float& value, float lo, float hi) {
+            const auto it = root.find(key);
+            if (it == root.end() || !it->is_number())
+                return;
+            value = std::clamp(jsonFloat(*it), lo, hi);
+        };
+        getLevel("namLevel", settings.namLevel, kNamLevelMin, kNamLevelMax);
+        getLevel("irLevel", settings.irLevel, kIrLevelMin, kIrLevelMax);
         get("parallel", settings.parallel);
         get("theme", settings.theme);
         get("favorites", settings.favorites);

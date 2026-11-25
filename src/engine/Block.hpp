@@ -41,6 +41,15 @@ enum class ParamScale {
 };
 
 // One block parameter. The host sees every slot parameter as 0..1; the spec maps that to the real value.
+// The levels normalized NAM and IR blocks are brought to (Settings > Normalized levels; owner, 2026-11-25)
+struct NormalizeLevels {
+    float namDb = -18.0f; // a NAM model's stored loudness becomes this (the NAM plugin's -18 dB by default)
+    float irDb = 0.0f;    // an IR's gain on a guitar amp's spectrum (unity by default)
+
+    static constexpr float kNamMinDb = -30.0f, kNamMaxDb = -6.0f;
+    static constexpr float kIrMinDb = -12.0f, kIrMaxDb = 12.0f;
+};
+
 struct ParamSpec {
     const char* name = nullptr;
     const char* unit = "";
@@ -143,6 +152,10 @@ public:
     // with the metronome: past the blocks after this one and the output level, so a click (the looper's count-in)
     // isn't distorted by an amp after it or turned down with the guitar. Blocks add to it, never overwrite it.
     virtual void setClickOutput(float* /*click*/) {}
+
+    // RT. The levels normalized blocks are brought to (Settings), called before every process(); blocks that
+    // normalize (NAM, IR) follow a change smoothly.
+    virtual void setNormalizeLevels(const NormalizeLevels& /*levels*/) {}
 };
 
 enum class MeterStyle {

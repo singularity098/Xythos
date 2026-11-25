@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <random>
@@ -443,8 +444,26 @@ private:
         uint32_t seenRevision = 0;
         uint32_t seenExport = 0;
         auto lastRebuild = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+        auto settingsCheckedAt = lastRebuild;
+        std::filesystem::file_time_type settingsTime {};
+        bool settingsRead = false;
         while (!fStopExchange)
         {
+            // Settings > Normalized levels: the file is shared by every instance, so this follows changes made in
+            // any of them, with this one's window closed too
+            if (const auto checked = std::chrono::steady_clock::now(); checked - settingsCheckedAt >= std::chrono::seconds(1))
+            {
+                settingsCheckedAt = checked;
+                std::error_code error;
+                const auto time = std::filesystem::last_write_time(Settings::defaultPath(), error);
+                if (!settingsRead || (!error && time != settingsTime))
+                {
+                    settingsRead = true;
+                    settingsTime = error ? std::filesystem::file_time_type {} : time;
+                    const Settings settings = Settings::load();
+                    fEngine.setNormalizeLevels({ settings.namLevel, settings.irLevel });
+                }
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             // the looper's memory, the first time it's wanted (not reserved in instances that never use it)
             fEngine.serviceLooper();

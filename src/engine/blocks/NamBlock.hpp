@@ -34,7 +34,4 @@ enum NamParam {
 // The config key that marks a NAM block as having its tone controls
 constexpr const char* kNamToneKey = "tone";
 
-// Loudness that normalized models are brought to, in dB (the same target the NAM plugin uses)
-constexpr double kNamTargetLoudnessDb = -18.0;
-
 } // namespace xythos
