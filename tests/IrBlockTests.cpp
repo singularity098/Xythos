@@ -5,10 +5,12 @@
 
 #include "TestSupport.hpp"
 #include "engine/blocks/IrBlock.hpp"
+#include "engine/dsp/Biquad.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <random>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -181,4 +183,65 @@ TEST_CASE("IR block keeps its IR when the host reactivates the plugin")
     CHECK(peakIndex(out[0]) == 300);
     CHECK(out[0][300] > 0.9f);
     CHECK(std::fabs(out[0][0]) < 0.01f); // and no dry signal
+}
+
+namespace {
+
+// A cab-like IR: 90 Hz to about 5 kHz with a presence bump, scaled by `scale`
+std::vector<float> cabLikeIr(double rate, float scale)
+{
+    Biquad hp, lp1, lp2, peak;
+    hp.setHighPass(rate, 90.0);
+    lp1.setLowPass(rate, 5000.0);
+    lp2.setLowPass(rate, 5000.0);
+    peak.setPeak(rate, 2500.0, 5.0, 1.0);
+    std::vector<float> ir(static_cast<size_t>(rate * 0.1));
+    for (size_t i = 0; i < ir.size(); ++i)
+        ir[i] = scale * peak.process(lp2.process(lp1.process(hp.process(i == 0 ? 1.0f : 0.0f))));
+    return ir;
+}
+
+// Output level over input level, in dB, for noise shaped like an amp's output (falling above 800 Hz)
+double levelChangeDb(Block& block)
+{
+    std::mt19937 rng(7);
+    std::normal_distribution<float> noise;
+    Biquad shape;
+    shape.setLowPass(kRate, 800.0, 0.5);
+    std::vector<float> buf(kBuffer);
+    double in = 0.0, out = 0.0;
+    for (int b = 0; b < 1500; ++b)
+    {
+        for (float& v : buf)
+            v = shape.process(noise(rng));
+        double blockIn = 0.0;
+        for (float v : buf)
+            blockIn += static_cast<double>(v) * v;
+        float* io[1] = { buf.data() };
+        block.process(io, 1, kBuffer);
+        if (b < 100) // the IR's start and the gain smoothing
+            continue;
+        in += blockIn;
+        for (float v : buf)
+            out += static_cast<double>(v) * v;
+    }
+    return 10.0 * std::log10(out / in);
+}
+
+} // namespace
+
+// Normalize used to give the IR unit energy, which left a cab 4 to 8 dB louder than its input on a guitar
+TEST_CASE("IR block normalizes a cab to about unity on a guitar amp's spectrum, whatever its file's level")
+{
+    for (float scale : { 0.05f, 1.0f, 8.0f })
+    {
+        CAPTURE(scale);
+        std::unique_ptr<Block> block = loadIr(writeWav("cab-level.wav", kRate, { cabLikeIr(kRate, scale) }));
+        REQUIRE(block);
+        CHECK(std::fabs(levelChangeDb(*block)) < 1.5);
+    }
+    // and at another file rate
+    std::unique_ptr<Block> block = loadIr(writeWav("cab-level-44.wav", 44100.0, { cabLikeIr(44100.0, 1.0f) }));
+    REQUIRE(block);
+    CHECK(std::fabs(levelChangeDb(*block)) < 1.5);
 }

@@ -43,6 +43,38 @@ std::vector<float> resample(const std::vector<float>& in, double fromRate, doubl
     return out;
 }
 
+// Normalization (owner, 2026-11-25: unit energy, flat to white noise across the whole band, left a cab 4 to 8 dB
+// louder than its input, as a cab passes only the band an amp's output is in). The gain that makes the IR's level
+// on a guitar amp's spectrum unity: flat from about 60 Hz, falling 6 dB per octave above 800 Hz. A plain impulse
+// keeps its level.
+constexpr double kNormLowHz = 60.0;
+constexpr double kNormHighHz = 800.0;
+
+// Energy of `x`, followed by `tail` zeros, through the weighting filters (one-pole high-pass and low-pass)
+double weightedEnergy(const std::vector<float>& x, size_t tail, double rate)
+{
+    const double hp = std::exp(-2.0 * M_PI * kNormLowHz / rate);
+    const double lp = std::exp(-2.0 * M_PI * kNormHighHz / rate);
+    double hpIn = 0.0, hpOut = 0.0, lpOut = 0.0, energy = 0.0;
+    for (size_t i = 0; i < x.size() + tail; ++i)
+    {
+        const double in = i < x.size() ? x[i] : 0.0;
+        hpOut = hp * (hpOut + in - hpIn);
+        hpIn = in;
+        lpOut = lp * lpOut + (1.0 - lp) * hpOut;
+        energy += lpOut * lpOut;
+    }
+    return energy;
+}
+
+float normalizationGain(const std::vector<float>& ir, double rate)
+{
+    const size_t tail = static_cast<size_t>(0.25 * rate); // the filters' own responses have died away by then
+    const double reference = weightedEnergy({ 1.0f }, tail, rate);
+    const double energy = weightedEnergy(ir, tail, rate);
+    return energy > 0.0 ? static_cast<float>(std::sqrt(reference / energy)) : 1.0f;
+}
+
 class IrBlock : public Block {
 public:
     void prepare(double sampleRate, uint32_t maxFrames) override
@@ -94,10 +126,6 @@ public:
             return false;
         }
 
-        // Energy normalization, so IRs of different loudness land near the same level
-        double energy = 0.0;
-        for (float v : fFileChannels[0])
-            energy += static_cast<double>(v) * v;
         // A float WAV can hold anything, NaN, infinity or 1e38 included (a damaged or hostile file): the convolution
         // would only ever output NaN or infinity. Real IRs peak near 1; past +60 dB the file is taken as damaged.
         for (const std::vector<float>& channel : fFileChannels)
@@ -112,7 +140,8 @@ public:
                 }
             }
         }
-        fNormGain = energy > 0.0 ? static_cast<float>(1.0 / std::sqrt(energy)) : 1.0f;
+        // so IRs of different loudness land near the same level: unity on a guitar amp's spectrum
+        fNormGain = normalizationGain(fFileChannels[0], fFileRate);
 
         buildConvolvers();
         fGain.snap(targetGain());

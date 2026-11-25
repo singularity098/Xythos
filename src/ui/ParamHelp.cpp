@@ -103,8 +103,8 @@ constexpr BlockHelp kBlockHelp[] = {
       "Removes the highest frequencies after the cab. Turn it down to soften fizz or harshness, often to 6-10 kHz. "
       "All the way up (20 kHz) it's off." },
     { "ir", "Normalize",
-      "Brings every IR to about the same loudness, so switching cabs doesn't make big jumps in volume. Turn it off "
-      "to hear the file at its own level." },
+      "Brings every IR to about the same loudness, so switching cabs doesn't make big jumps in volume, and sets it "
+      "so the cab plays your amp at about the level it came in. Turn it off to hear the file at its own level." },
 
     // DI: Studio DI
     { "studiodi", "Iron",
