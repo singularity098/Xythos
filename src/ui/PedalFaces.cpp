@@ -110,6 +110,11 @@ const std::vector<PedalFace>& pedalFaces()
           { { 0.495f, 0.705f, 0.046f, 0xff, 0xb9, 0x53 } },
           { 0.5f, 0.825f, 0.13f },
           { 0xff, 0xb9, 0x53 } },
+        { "humeliminator", // rendered in Blender (tools/blender/render_pedal.py), which printed these
+          { { "Amount", 0.353f, 0.168f, 0.111f }, { "Adapt", 0.647f, 0.168f, 0.111f } },
+          { { 0.5f, 0.732f, 0.04f, 0x3f, 0xb4, 0xff } },
+          { 0.5f, 0.857f, 0.143f },
+          { 0x3f, 0xb4, 0xff } },
         { "diodebridge",
           { { "Threshold", 0.3f, 0.23f, 0.09f }, { "Mix", 0.5f, 0.175f, 0.09f }, { "Gain", 0.7f, 0.23f, 0.09f } },
           { { 0.502f, 0.728f, 0.037f, 0xe0, 0x55, 0xff } },

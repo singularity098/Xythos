@@ -56,6 +56,15 @@ drew those three that way anyway, with the glyph and indicator below the treadle
    knobs' rim colour, the glyph's colour (all zero for black knobs). `tests/PedalFaceTests.cpp` checks they fit
    and don't overlap.
 
+## Blender renders
+
+Instead of a Krea render, a pedal can be built and rendered in Blender: `tools/blender/render_pedal.py <typeId>`
+(Blender's Python module, `pip install bpy`, 5.x; or `blender -b -P tools/blender/render_pedal.py -- <typeId>`). Each
+pedal's glyph (polylines drawn as neon tubes), glyph colour, knobs and side-light colours are in its `PEDALS` table.
+It writes the render and a JSON with the enclosure's box for step 1 above and the face for step 2, computed from the
+geometry, so nothing is read off a grid. `--preview` renders at half size with few samples (15 s on 4 cores; the full
+render takes about 4 minutes). The knobs and the LED are left out of the model: the UI draws them.
+
 ## Waiting for renders
 
 New pedals drawn with the placeholder art until their render arrives (`tests/PedalFaceTests.cpp` lists them as
@@ -149,7 +158,13 @@ Top-down photo, camera directly above and facing straight down, of a slightly ta
 Top-down photo, camera directly above and facing straight down, of a pill-ended guitar effects pedal flat on a dark stage floor the way it sits when played, not standing on end. Portrait 2:3 frame, the pedal filling nearly the whole frame, long axis vertical. Enclosure: dark anodized aluminium with chamfered edges and countersunk screws. Top of the enclosure: a large plain smooth area left empty for knobs. Middle: a neon glyph in bold tube-style line-art, glowing orange, showing a row of falling vertical bars like a spectrum with a paintbrush stroke sweeping over their tops, lit from within. Below it: a smooth empty patch left clear for an indicator light. Bottom: a round latching stomp footswitch set into the enclosure. Two 1/4 inch instrument cables plugged into the jacks on the left and right sides, entering from the frame edges and taking little room. Indoors in a dark room, moody stage lighting, red and teal side light, light haze. Photorealistic, sharp focus. No text, letters, numbers, labels, logos or brand names. Original design.
 ```
 
+## Rendered in Blender
+
+Pedals whose photo is a Blender render (see "Blender renders"); their prompts are kept in case a Krea render is wanted.
+
 ### Hum Eliminator (`humeliminator`)
+
+Rendered in Blender on 2026-11-26.
 
 Glyph: A single-coil guitar pickup, a long narrow bar with a row of six round pole pieces, above a jagged buzzing zigzag wave that turns into a calm straight line.
 
