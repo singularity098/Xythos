@@ -65,6 +65,12 @@ It writes the render and a JSON with the enclosure's box for step 1 above and th
 geometry, so nothing is read off a grid. `--preview` renders at half size with few samples (15 s on 4 cores; the full
 render takes about 4 minutes). The knobs and the LED are left out of the model: the UI draws them.
 
+Other looks (2026-11-26, an exploration): `tools/blender/render_styles.py <style> <typeId>...` renders the same
+enclosure and top-down camera in other styles: clean studio finishes (clean-white, clean-sand, clean-slate,
+clean-black), pastel, bauhaus, raw aluminium, copper, hammertone, a walnut face with a brass inlay, black glass with lit
+lines, and the neon look. The glyphs are the pedals' own from `src/ui/BlockGlyphs.cpp`, dumped to JSON by
+`tools/blender/dump_glyphs.cpp` (build line at its top). Same geometry as `render_pedal.py`, so its face placements apply.
+
 ## Waiting for renders
 
 New pedals drawn with the placeholder art until their render arrives (`tests/PedalFaceTests.cpp` lists them as

@@ -389,7 +389,7 @@ def face_json(scene, cam, spec, top, led_y, sw_y):
     return {
         "box": [round(v, 4) for v in box],
         "knobs": knobs,
-        "led": {"x": crop_pt(led)[0], "y": crop_pt(led)[1], "radius": crop_r(led, (0.24 + 0.05) * 1.3 / 1.42)}  # the drawn bezel (1.42x) covers the recess,
+        "led": {"x": crop_pt(led)[0], "y": crop_pt(led)[1], "radius": crop_r(led, (0.24 + 0.05) * 1.3 / 1.42)},  # the drawn bezel (1.42x) covers the recess
         "footswitch": {"x": crop_pt(sw)[0], "y": crop_pt(sw)[1], "radius": crop_r(sw, 0.95)},
         "color": spec["glyph_color"],
     }
