@@ -254,6 +254,7 @@ enum class Hit {
     PresetMenu,
     Undo,
     Redo,
+    FlipAll,        // turn every block that's on off and every block that's off on (one undo step)
     MenuItem,       // index = position in fMenu
     MenuFolder,     // index = position in fMenu: a preset folder (hovering opens its submenu; a click does too)
     Locate,         // index = position in the chain
@@ -1550,6 +1551,10 @@ protected:
             redo();
             return true;
 
+        case Hit::FlipAll:
+            flipAllBypass();
+            return true;
+
         case Hit::MenuItem:
             runMenu(hit->index);
             return true;
@@ -2523,6 +2528,21 @@ private:
         const uint32_t index = slotBypassParam(fChain.blocks[block].slot);
         setNormalized(index, normalized(index) >= 0.5f ? 0.0f : 1.0f, true);
         syncBypassToChain(index);
+    }
+
+    // Every block that's on goes off and every one that's off comes on, in one undo step: with two amps in the
+    // chain, one on and one off, a click switches between them (owner, 2026-11-26)
+    void flipAllBypass()
+    {
+        if (fChain.blocks.empty())
+            return;
+        beginEdit();
+        for (const BlockState& block : fChain.blocks)
+        {
+            const uint32_t index = slotBypassParam(block.slot);
+            setNormalized(index, normalized(index) >= 0.5f ? 0.0f : 1.0f, true);
+            syncBypassToChain(index);
+        }
     }
 
     // Add Block, opened on the block's own category: the block picked there takes this one's place
@@ -5586,6 +5606,12 @@ private:
                      "over it with another. The dot on this button shows its state while the page is closed: red "
                      "recording, amber overdubbing, green playing. Map footswitches to its buttons with MIDI learn "
                      "(right-click a button)." };
+        case Hit::FlipAll:
+            return { "Flip",
+                     "Turns every block that's on off, and every block that's off on, in one go. Put two amps (or "
+                     "any two sounds) in the chain with one on and one off, and each click switches between them. "
+                     "Every block flips, so one both sounds share (a cab, a reverb) goes off too. Undo takes a flip "
+                     "back." };
         case Hit::MetroPanel:
             return { "Metronome Settings",
                      "Opens the metronome panel: tempo, time signature, accents, beat grouping, subdivisions, "
@@ -6433,7 +6459,7 @@ private:
         constexpr float bh = 36.0f, by = (kTopBarHeight - bh) / 2;
         const std::string preset = presetName() + (presetModified() ? " •" : "");
         // narrower on a small window, so the icon buttons on the right (224 px) still fit
-        const float presetWidth = std::clamp(fWidth - 224.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 158.0f, 160.0f,
+        const float presetWidth = std::clamp(fWidth - 224.0f - 12.0f - (logoRight + 28.0f) - 8.0f - 228.0f, 160.0f,
                                              280.0f);
         const Rect presetButton { logoRight + 28.0f, by, presetWidth, bh };
         fPresetButtonX = presetButton.x;
@@ -6449,11 +6475,16 @@ private:
             fillRect(undo.x, undo.y, undo.w, undo.h, theme::background.withAlpha(0.6f), 6.0f);
         if (!fUndo.canRedo())
             fillRect(redo.x, redo.y, redo.w, redo.h, theme::background.withAlpha(0.6f), 6.0f);
+        // Flip (owner, 2026-11-26): every block on/off the other way
+        const Rect flip { redo.x + redo.w + 6.0f, by, 64.0f, bh };
+        drawButton(flip, "Flip", false, theme::accent, Hit::FlipAll, 0);
+        if (fChain.blocks.empty())
+            fillRect(flip.x, flip.y, flip.w, flip.h, theme::background.withAlpha(0.6f), 6.0f);
 
         if (fLearnParam >= 0)
         {
             const std::string text = "MIDI learn: move a controller for " + paramName(fLearnParam) + "  (Esc cancels)";
-            label(redo.x + redo.w + 16.0f, kTopBarHeight / 2, text.c_str(), theme::accent, 13.0f,
+            label(flip.x + flip.w + 16.0f, kTopBarHeight / 2, text.c_str(), theme::accent, 13.0f,
                   ALIGN_LEFT | ALIGN_MIDDLE);
         }
         // icon buttons on the right; hovering shows what they do
@@ -6486,9 +6517,9 @@ private:
         drawChevron(metroPanel.x + metroPanel.w / 2, metroPanel.y + metroPanel.h / 2,
                     fMetroPanel ? theme::accent : theme::text);
 
-        // a new release: after Redo (not during MIDI learn, which shows its message there), up to the metronome
+        // a new release: after Flip (not during MIDI learn, which shows its message there), up to the metronome
         if (const std::optional<std::string> update = availableUpdate(); update && fLearnParam < 0)
-            drawUpdateBanner(redo.x + redo.w + 16.0f, metro.x - 12.0f, by, bh, *update);
+            drawUpdateBanner(flip.x + flip.w + 16.0f, metro.x - 12.0f, by, bh, *update);
     }
 
     // The logo (LogoImage.cpp: the crop circle and the wordmark, with their glow), its left edge at x and centred on
