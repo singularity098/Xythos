@@ -9,6 +9,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Version
+        id: version
+        shell: bash
+        # Artifacts are named <App>-<version>-<platform>-<architecture>: a v* tag's version, or the
+        # project's version and the commit for builds between releases
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^project(Xythos VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Submodules are cached (keyed on their pinned commits) so GitLab, which hosts Eigen and is sometimes
       # overloaded, is only contacted when a submodule changes
       - name: Submodule cache key
@@ -46,7 +58,7 @@ jobs:
         run: LV2_PATH=$PWD/build/bin lv2info https://github.com/singularity098/xythos
       - uses: actions/upload-artifact@v4
         with:
-          name: xythos-linux-x86_64
+          name: Xythos-${{ steps.version.outputs.version }}-linux-x86_64
           path: |
             build/bin/xythos.lv2
             build/bin/xythos.vst3
@@ -55,6 +67,18 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Version
+        id: version
+        shell: bash
+        # Artifacts are named <App>-<version>-<platform>-<architecture>: a v* tag's version, or the
+        # project's version and the commit for builds between releases
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^project(Xythos VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Submodules are cached (keyed on their pinned commits) so GitLab, which hosts Eigen and is sometimes
       # overloaded, is only contacted when a submodule changes
       - name: Submodule cache key
@@ -86,7 +110,7 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
       - uses: actions/upload-artifact@v4
         with:
-          name: xythos-windows-x86_64
+          name: Xythos-${{ steps.version.outputs.version }}-windows-x86_64
           path: |
             build/bin/xythos.lv2
             build/bin/xythos.vst3
@@ -95,6 +119,18 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Version
+        id: version
+        shell: bash
+        # Artifacts are named <App>-<version>-<platform>-<architecture>: a v* tag's version, or the
+        # project's version and the commit for builds between releases
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^project(Xythos VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Submodules are cached (keyed on their pinned commits) so GitLab, which hosts Eigen and is sometimes
       # overloaded, is only contacted when a submodule changes
       - name: Submodule cache key
@@ -147,7 +183,7 @@ jobs:
           auval -strict -v aumf NMsy S098
       - uses: actions/upload-artifact@v4
         with:
-          name: xythos-macos-universal
+          name: Xythos-${{ steps.version.outputs.version }}-macos-universal
           path: |
             build/bin/xythos.lv2
             build/bin/xythos.vst3
